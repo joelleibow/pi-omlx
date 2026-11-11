@@ -1,6 +1,6 @@
 # Contributing
 
-Local development for `pi-omlx-picker`. User config: [docs/CONFIGURATION.md](./docs/CONFIGURATION.md).
+Local development for `pi-omlx`. User config: [docs/CONFIGURATION.md](./docs/CONFIGURATION.md).
 
 ## Setup
 
@@ -19,12 +19,12 @@ Run via [`mise`](https://mise.jdx.dev/):
 - `mise run smoke:omlx` — live OMLX probe: reasoning model, non-thinking model, tool-flow request.
 - `mise run verify:live` — typecheck, unit tests, and live smoke (skips Biome; run `mise run verify` first if you want lint coverage).
 - `mise run debug:omlx` — OMLX config, model path, template, log, and cache diagnostics. Pass model names after `--` to narrow, e.g. `mise run debug:omlx -- opus sonnet`.
-- `mise run debug:pi` — Pi install, config, session, log, and cache diagnostics. Pass `install`, `config`, `sessions`, `logs`, or `cache` after `--`.
-- `mise run debug:pi -- timeline <session-id|session-file|iso-time>` — Pi provider + OMLX server + changed-files window around a stuck turn. Use `--minutes=N` to set the window (default 3).
+- `mise run debug:pi` — Pi home, config, session, log, and cache diagnostics. Pass `install`, `config`, `sessions`, `logs`, or `cache` after `--`.
+- `mise run debug:pi -- timeline <session-id|session-file|iso-time>` — OMLX server events and changed files around a stuck turn. You pass the anchor: a session id, a session file, or an ISO timestamp, with no default. Use `--minutes=N` to set how far past the anchor the window runs (default 3).
 
 ## Triage order
 
-1. Read the latest provider events in `log/provider-debug.log` (or `~/.pi/packages/pi-omlx-picker/log/provider-debug.log` when installed via Pi). Look for `stream_first_delta_timeout`, `assistant_stop_diagnosis`, and the most recent `before_provider_request` / `after_provider_response` pair. The latest `mise run smoke:omlx` proof lives in `log/smoke-test/<iso-timestamp>.json`.
+1. Reproduce the stuck turn with `PI_OMLX_DEBUG` set: the extension writes `[pi-omlx] <event> {json}` lines to stderr in the terminal that started Pi, and keeps no log file. The events are `model_select`, `before_provider_request`, `provider_registered`, `stream_error_normalized`, `stream_simple_entered`, `stream_simple_bypassed` and `stream_throw_normalized`. The latest `mise run smoke:omlx` proof lives in `log/smoke-test/<iso-timestamp>.json`.
 2. Inspect Pi host state: `mise run debug:pi`.
 3. Inspect OMLX config and model files: `mise run debug:omlx`.
 4. Run live smoke: `mise run smoke:omlx`.

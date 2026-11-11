@@ -1,11 +1,11 @@
-# Pi OMLX Picker
+# pi-omlx
 
 > Seamlessly integrate your local [oMLX](https://github.com/jundot/omlx) models into Pi.
 
 This extension discovers models from a local OMLX server and registers them as native Pi providers.
 Switch between your local and remote models effortlessly using Pi's built-in `/model` command.
 
-![Pi OMLX Picker Demo](./.assets/demo.gif)
+![pi-omlx demo](./.assets/demo.gif)
 
 ## ✨ Features
 
@@ -16,7 +16,7 @@ Switch between your local and remote models effortlessly using Pi's built-in `/m
 ## 📦 Installation
 
 ```bash
-pi install npm:pi-omlx-picker
+pi install git:github.com/joelleibow/pi-omlx
 ```
 
 ## 🛠️ Development

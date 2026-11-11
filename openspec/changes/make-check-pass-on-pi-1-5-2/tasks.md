@@ -46,7 +46,10 @@ Coverage, requirement by requirement: Requirement 1's exit-zero scenario by 4.1 
     - `PI_CODING_AGENT_DIR=.pi/marbleization/make-check-pass-on-pi-1-5-2/agent-dir npx vitest run test/provider.test.ts` -> `Tests 4 passed (4)`.
     - `npx biome check test/provider.test.ts` -> `Checked 1 file in 2ms. No fixes applied.`
     - The helper's `undefined` throw is not exercised by any test; the mutation in 3.2 is the design's proof that it bites.
-- [ ] 3.2 Show the helper still bites, with the mutation and its revert. In a scratch edit, set the condition at `src/provider.ts:61` to `thinkingDefault !== false`, run `PI_CODING_AGENT_DIR=<scratch directory> npx vitest run test/provider.test.ts` and record the failure, then revert the edit and record the test green again. Verification: the mutated run reports one failing test, the reverted run passes 4/4, and `git diff -- src/provider.ts` is empty afterwards, so no part of the mutation lands (`design.md`, decision 4; `council.md`, "Michael's Rulings").
+- [x] 3.2 Show the helper still bites, with the mutation and its revert. In a scratch edit, set the condition at `src/provider.ts:61` to `thinkingDefault !== false`, run `PI_CODING_AGENT_DIR=<scratch directory> npx vitest run test/provider.test.ts` and record the failure, then revert the edit and record the test green again. Verification: the mutated run reports one failing test, the reverted run passes 4/4, and `git diff -- src/provider.ts` is empty afterwards, so no part of the mutation lands (`design.md`, decision 4; `council.md`, "Michael's Rulings").
+  - Evidence:
+    - With `src/provider.ts:61` mutated to `const reasoning = m.thinkingDefault !== false;`, `PI_CODING_AGENT_DIR=.pi/marbleization/make-check-pass-on-pi-1-5-2/agent-dir npx vitest run test/provider.test.ts` -> `Tests 1 failed | 3 passed (4)`, failing at `test/provider.test.ts:62` on the `no-toggle` case: `assert.equal(chatModel(config.models?.[2]).reasoning, false)` got `true`. The wrap through `chatModel` reaches the assertion, so it still bites.
+    - Reverted to `const reasoning = m.thinkingDefault === true;`: `git diff -- src/provider.ts` is empty, and the same command -> `Tests 4 passed (4)`.
 
 ## 4. The whole check and the two diff checks
 

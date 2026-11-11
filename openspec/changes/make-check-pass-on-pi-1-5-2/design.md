@@ -27,7 +27,7 @@ Constraints that shape the approach:
 - No removal of pi-ai's compat entry (`michael-orientation.md` trap e).
 - No test isolation by default (`owner-rulings.md` §3).
 - No edit to `src/provider.ts`, `src/stream-writer.ts`, `src/stream-events.ts` or `index.ts` (`research-eleanor.md`, "Type use and test inputs"; `michael-orientation.md` trap c).
-- No project documentation in this change's diff. The docs pass follows the implementation gate.
+- No project documentation in the implementation diff. The docs pass writes it after the implementation gate.
 
 ## Decisions
 
@@ -123,11 +123,11 @@ Alternatives:
 - **Land the type changes and the dependency bump in one commit.** Rejected: the bump's evidence is the two provider errors going and two stream errors arriving, and a single commit cannot show both.
 - **Do the provider test first.** Rejected: it is independent of the bump, and doing it first hides the count that proves the bump did what the scratch predicted.
 
-### 7. No project Markdown goes false, and the docs pass confirms it
+### 7. The implementation diff carries no project Markdown, and the docs pass adds one isolation note
 
-`README.md:25` and `CONTRIBUTING.md:20` mention the check without naming a pi version, so no sentence there becomes false (`michael-orientation.md` §1). The docs pass, after the implementation gate, reads those two lines and greps tracked Markdown for `0.80` and `pi-ai` to confirm no document states the old range; if one does, the docs pass corrects it, and by Joel's ruling that never blocks the feature.
+The diff is `package.json`, `package-lock.json`, `src/stream.ts` and the two test files. The change's own artifacts under `openspec/changes/`, `tasks.md` included, are planning records rather than project documentation, and Michael's rule about a Markdown file in the diff is about project documentation (`michael-orientation.md` §1). The docs pass, after the implementation gate, greps tracked Markdown for `0.80` and `pi-ai` and finds nothing, so no existing sentence went false: `README.md` and `CONTRIBUTING.md` name the check without naming a pi version.
 
-The change's own artifacts under `openspec/changes/` are planning records, not project documentation, and Michael's rule about a Markdown file in the diff is about project documentation (`michael-orientation.md` §1).
+It also adds a paragraph to `CONTRIBUTING.md`'s Setup section, because that section tells a contributor to run the suite bare while Joel's ruling and Requirement 3 make a scratch `PI_CODING_AGENT_DIR` the condition of any run (`owner-rulings.md` §3; `specs/verification/spec.md`). The paragraph says what a bare run costs, that it replaces the contributor's cached model list with test fixtures, and names the variable to set. An empty scratch directory is enough, because `src/catalog.ts:598` creates `cache/` under it. The paragraph goes when the suite isolates itself.
 
 ## Risks / Trade-offs
 

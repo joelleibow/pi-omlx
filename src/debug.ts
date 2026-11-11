@@ -11,10 +11,7 @@ function redact(value: string): string {
 
 // Opt-in, local smoke-only trace. It records provider-path transitions and
 // error normalization without model payloads, prompts, or credentials.
-export function omlxDebug(
-	event: string,
-	data?: Record<string, unknown>,
-): void {
+export function omlxDebug(event: string, data?: Record<string, unknown>): void {
 	if (!process.env[DEBUG_ENV]) return;
 	const safe = data
 		? Object.fromEntries(

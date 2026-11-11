@@ -8,10 +8,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, test } from "vitest";
 import extension, { EXTENSION_SINGLETON_KEY } from "../index.ts";
-import {
-	_setAuthPathForTesting,
-	PROVIDER_KEY,
-} from "../src/auth-storage.ts";
+import { _setAuthPathForTesting, PROVIDER_KEY } from "../src/auth-storage.ts";
 
 function callbacksReturning(...values: string[]) {
 	const queue = [...values];

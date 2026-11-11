@@ -1,4 +1,4 @@
-const DEBUG_ENV = "PI_OMLX_PICKER_DEBUG";
+const DEBUG_ENV = "PI_OMLX_DEBUG";
 
 function redact(value: string): string {
 	return value
@@ -25,6 +25,6 @@ export function omlxDebug(
 			)
 		: undefined;
 	process.stderr.write(
-		`[pi-omlx-picker] ${event}${safe ? ` ${JSON.stringify(safe)}` : ""}\n`,
+		`[pi-omlx] ${event}${safe ? ` ${JSON.stringify(safe)}` : ""}\n`,
 	);
 }

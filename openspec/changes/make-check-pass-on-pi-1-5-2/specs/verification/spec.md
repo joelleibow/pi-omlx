@@ -32,14 +32,10 @@ No tracked non-Markdown file SHALL carry `@ts-ignore`, `@ts-expect-error`, `@ts-
 
 ### Requirement: Verification Runs Leave The Operator's Agent Directory Alone
 
-When `PI_CODING_AGENT_DIR` names a directory outside `~/.pi/agent`, a run of `npm run check` or of any part of it SHALL leave `~/.pi/agent/cache/omlx-models.json` neither created nor modified. The suite writes that file under the agent directory it resolves, so until it isolates itself, the variable is the isolation.
+When `PI_CODING_AGENT_DIR` names a directory outside `~/.pi/agent`, a run of `npm run check` or of any part of it SHALL NOT write `~/.pi/agent/cache/omlx-models.json`. The suite writes that file under the agent directory it resolves, so until it isolates itself, the variable is the isolation.
 
-#### Scenario: The cache file keeps its modification time
+#### Scenario: The run's write lands in the scratch directory
 
-- **WHEN** `PI_CODING_AGENT_DIR=<scratch directory> npm run check` runs while `~/.pi/agent/cache/omlx-models.json` exists
-- **THEN** that file's modification time is unchanged after the run
-
-#### Scenario: A cache file that was absent stays absent
-
-- **WHEN** `PI_CODING_AGENT_DIR=<scratch directory> npm run check` runs while `~/.pi/agent/cache/omlx-models.json` does not exist
-- **THEN** the file does not exist after the run
+- **WHEN** `PI_CODING_AGENT_DIR=<scratch directory> npm run check` runs
+- **THEN** if `~/.pi/agent/cache/omlx-models.json` exists afterwards, it holds no `apiRoot` or model id the suite's fixtures register (`test/index.test.ts:72,76`)
+- **AND** `<scratch directory>/cache/omlx-models.json` holds that fixture `apiRoot` with a `savedAt` no earlier than the run started

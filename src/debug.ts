@@ -1,4 +1,4 @@
-const DEBUG_ENV = "PI_OMLX_PICKER_DEBUG";
+const DEBUG_ENV = "PI_OMLX_DEBUG";
 
 function redact(value: string): string {
 	return value
@@ -11,10 +11,7 @@ function redact(value: string): string {
 
 // Opt-in, local smoke-only trace. It records provider-path transitions and
 // error normalization without model payloads, prompts, or credentials.
-export function pickerDebug(
-	event: string,
-	data?: Record<string, unknown>,
-): void {
+export function omlxDebug(event: string, data?: Record<string, unknown>): void {
 	if (!process.env[DEBUG_ENV]) return;
 	const safe = data
 		? Object.fromEntries(
@@ -25,6 +22,6 @@ export function pickerDebug(
 			)
 		: undefined;
 	process.stderr.write(
-		`[pi-omlx-picker] ${event}${safe ? ` ${JSON.stringify(safe)}` : ""}\n`,
+		`[pi-omlx] ${event}${safe ? ` ${JSON.stringify(safe)}` : ""}\n`,
 	);
 }

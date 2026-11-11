@@ -7,10 +7,8 @@ import type {
 	ProviderConfig,
 } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, test } from "vitest";
-import extension from "../index.ts";
-import { _setAuthPathForTesting } from "../src/auth-storage.ts";
-
-const singletonKey = Symbol.for("pi-omlx-picker/loaded");
+import extension, { EXTENSION_SINGLETON_KEY } from "../index.ts";
+import { _setAuthPathForTesting, PROVIDER_KEY } from "../src/auth-storage.ts";
 
 function callbacksReturning(...values: string[]) {
 	const queue = [...values];
@@ -35,22 +33,24 @@ function jsonResponse(body: unknown): Response {
 let dir: string;
 
 beforeEach(() => {
-	dir = mkdtempSync(join(tmpdir(), "pi-omlx-picker-index-"));
+	dir = mkdtempSync(join(tmpdir(), "pi-omlx-index-"));
 	_setAuthPathForTesting(join(dir, "auth.json"));
-	delete (globalThis as Record<PropertyKey, unknown>)[singletonKey];
+	delete (globalThis as Record<PropertyKey, unknown>)[EXTENSION_SINGLETON_KEY];
 });
 
 afterEach(() => {
 	_setAuthPathForTesting(undefined);
 	rmSync(dir, { recursive: true, force: true });
-	delete (globalThis as Record<PropertyKey, unknown>)[singletonKey];
+	delete (globalThis as Record<PropertyKey, unknown>)[EXTENSION_SINGLETON_KEY];
 });
 
 test("/login with an API key registers authenticated OMLX models", async () => {
 	let registered: ProviderConfig | undefined;
+	const registeredIds = new Set<string>();
 	const handlers = new Map<string, () => void>();
 	const pi = {
-		registerProvider: (_provider: string, config: ProviderConfig) => {
+		registerProvider: (provider: string, config: ProviderConfig) => {
+			registeredIds.add(provider);
 			registered = config;
 		},
 		unregisterProvider: () => {},
@@ -89,6 +89,7 @@ test("/login with an API key registers authenticated OMLX models", async () => {
 		assert.equal(registered?.authHeader, true);
 		assert.equal(registered?.apiKey, "$OMLX_API_KEY");
 		assert.equal(registered?.models?.[0]?.id, "real-model");
+		assert.deepEqual([...registeredIds], [PROVIDER_KEY]);
 	} finally {
 		globalThis.fetch = originalFetch;
 		handlers.get("session_shutdown")?.();

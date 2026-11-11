@@ -230,7 +230,7 @@ test("fetchModels omits the Authorization header for keyless servers", async () 
 });
 
 test("fetchModels applies local OMLX model settings for localhost metadata refinement", async () => {
-	const dir = mkdtempSync(join(tmpdir(), "pi-omlx-picker-"));
+	const dir = mkdtempSync(join(tmpdir(), "pi-omlx-"));
 	const settingsPath = join(dir, "model_settings.json");
 	writeFileSync(
 		settingsPath,
@@ -308,7 +308,7 @@ test("fetchModels applies local OMLX model settings for localhost metadata refin
 });
 
 test("applyLocalModelSettings projects full model_settings entry into bridge metadata", () => {
-	const dir = mkdtempSync(join(tmpdir(), "pi-omlx-picker-"));
+	const dir = mkdtempSync(join(tmpdir(), "pi-omlx-"));
 	const settingsPath = join(dir, "model_settings.json");
 	writeFileSync(
 		settingsPath,
@@ -464,7 +464,7 @@ test("applyLocalModelSettings projects full model_settings entry into bridge met
 });
 
 test("fetchModels emits catalog debug events for local settings refinement", async () => {
-	const dir = mkdtempSync(join(tmpdir(), "pi-omlx-picker-"));
+	const dir = mkdtempSync(join(tmpdir(), "pi-omlx-"));
 	const settingsPath = join(dir, "model_settings.json");
 	writeFileSync(
 		settingsPath,
@@ -512,7 +512,7 @@ test("applyLocalModelSettings honors explicit missing path without changing meta
 	const models = applyLocalModelSettings(
 		[{ id: "documenter", thinkingDefault: true }],
 		"https://example.test/v1",
-		join(tmpdir(), "pi-omlx-picker-missing-model-settings.json"),
+		join(tmpdir(), "pi-omlx-missing-model-settings.json"),
 	);
 	assert.deepEqual(models, [{ id: "documenter", thinkingDefault: true }]);
 });

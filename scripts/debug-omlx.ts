@@ -15,15 +15,6 @@ type JsonObject = Record<string, unknown>;
 const HOME = homedir();
 const MODEL_SETTINGS = join(HOME, ".omlx", "model_settings.json");
 const MODELS_DIR = join(HOME, "models");
-const PI_DEBUG_LOG = join(
-	HOME,
-	".pi",
-	"packages",
-	"pi-omlx-picker",
-	"log",
-	"provider-debug.log",
-);
-const LOCAL_DEBUG_LOG = resolve("log/provider-debug.log");
 const SMOKE_LOG_DIR = resolve("log/smoke-test");
 
 const CACHE_PATHS = [
@@ -64,8 +55,6 @@ function main(): void {
 
 	section("CONFIG");
 	fileSummary("model settings", MODEL_SETTINGS);
-	fileSummary("pi debug log", PI_DEBUG_LOG);
-	fileSummary("local debug log", LOCAL_DEBUG_LOG);
 	dirSummary("models dir", MODELS_DIR);
 	dirSummary("smoke logs", SMOKE_LOG_DIR);
 
@@ -86,9 +75,6 @@ function main(): void {
 	printModelPaths(selectedNames);
 
 	section("LOGS");
-	printLogSummary("pi debug log", PI_DEBUG_LOG);
-	if (LOCAL_DEBUG_LOG !== PI_DEBUG_LOG)
-		printLogSummary("local debug log", LOCAL_DEBUG_LOG);
 	printLatestFiles("latest smoke logs", SMOKE_LOG_DIR, 8);
 
 	section("CACHE STATE");
@@ -190,33 +176,6 @@ function printRopeConfig(modelPath: string | undefined): void {
 	if (rope !== undefined) line(`rope_parameters: ${formatValue(rope)}`);
 }
 
-function printLogSummary(label: string, path: string): void {
-	console.log(`\n[${label}]`);
-	if (!existsSync(path)) {
-		line(`missing: ${path}`);
-		return;
-	}
-	fileSummary("file", path);
-	const rows = tailLines(path, 500)
-		.map(parseLogLine)
-		.filter((entry): entry is JsonObject => Boolean(entry));
-	if (rows.length === 0) {
-		line("no parseable JSON log lines in last 500 lines");
-		return;
-	}
-	const kindCounts = new Map<string, number>();
-	for (const row of rows) {
-		const kind = typeof row.kind === "string" ? row.kind : "(unknown)";
-		kindCounts.set(kind, (kindCounts.get(kind) ?? 0) + 1);
-	}
-	line(`parseable recent lines: ${rows.length}`);
-	for (const [kind, count] of [...kindCounts.entries()]
-		.sort((a, b) => b[1] - a[1])
-		.slice(0, 12)) {
-		line(`${kind}: ${count}`);
-	}
-}
-
 function printLatestFiles(label: string, dir: string, limit: number): void {
 	console.log(`\n[${label}]`);
 	if (!existsSync(dir)) {
@@ -266,28 +225,6 @@ function resolveModelPath(path: string): string | undefined {
 			? resolve(path, "..", readlinkSync(path))
 			: path;
 		return statSync(resolved).isDirectory() ? resolve(resolved) : undefined;
-	} catch {
-		return undefined;
-	}
-}
-
-function tailLines(path: string, maxLines: number): string[] {
-	const text = readFileSync(path, "utf8");
-	return text.split(/\r?\n/).filter(Boolean).slice(-maxLines);
-}
-
-function parseLogLine(lineText: string): JsonObject | undefined {
-	const parsed = safeJson(lineText);
-	if (asObject(parsed)) return parsed as JsonObject;
-	const jsonStart = lineText.indexOf("{");
-	if (jsonStart < 0) return undefined;
-	const nested = safeJson(lineText.slice(jsonStart));
-	return asObject(nested);
-}
-
-function safeJson(text: string): unknown {
-	try {
-		return JSON.parse(text);
 	} catch {
 		return undefined;
 	}

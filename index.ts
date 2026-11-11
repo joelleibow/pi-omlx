@@ -23,12 +23,12 @@ import {
 	type OmlxConfig,
 	resolveConfiguredApiKey,
 } from "./src/config.ts";
-import { pickerDebug } from "./src/debug.ts";
+import { omlxDebug } from "./src/debug.ts";
 import { toProviderConfig } from "./src/provider.ts";
 import { applyOmlxThinkingControls } from "./src/thinking.ts";
 
 const PROVIDER = PROVIDER_KEY;
-const EXTENSION_SINGLETON_KEY = Symbol.for("pi-omlx-picker/loaded");
+export const EXTENSION_SINGLETON_KEY = Symbol.for("pi-omlx/loaded");
 
 const STARTUP_TIMEOUT_MS = 2_000;
 const POLL_INTERVAL_MS = 10 * 60 * 1000;
@@ -71,7 +71,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 	});
 
 	pi.on("model_select", (event) => {
-		pickerDebug("model_select", {
+		omlxDebug("model_select", {
 			provider: event.model.provider,
 			model: event.model.id,
 			source: event.source,
@@ -80,7 +80,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 
 	pi.on("before_provider_request", (event, ctx) => {
 		if (ctx.model?.provider !== PROVIDER) return;
-		pickerDebug("before_provider_request", {
+		omlxDebug("before_provider_request", {
 			provider: ctx.model.provider,
 			model: ctx.model.id,
 			payloadKeys:
@@ -182,7 +182,7 @@ function registerModels(
 	state.lastError = undefined;
 	state.lastRefreshAt = new Date().toISOString();
 	state.modelSettingsPath = modelSettingsPath;
-	pickerDebug("provider_registered", {
+	omlxDebug("provider_registered", {
 		provider: PROVIDER,
 		models: models.length,
 		streamSimple: true,

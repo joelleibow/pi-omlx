@@ -6,7 +6,7 @@ The normal path is Pi's built-in login: run `/login omlx` (or `/login`, then **S
 
 `/login` writes the base URL and API key to `~/.pi/agent/auth.json` under the `omlx` provider key, as an `oauth`-typed credential — the same file Pi uses for native providers. Use Pi's built-in `/logout` to remove stored OMLX credentials.
 
-`pi uninstall pi-omlx-picker` does not touch `auth.json`. Reinstall picks up where you left off; use `/logout` or delete the `omlx` entry yourself to scrub.
+`pi uninstall git:github.com/joelleibow/pi-omlx` does not touch `auth.json`. Reinstall picks up where you left off; use `/logout` or delete the `omlx` entry yourself to scrub.
 
 ## Environment variable overrides
 
@@ -54,4 +54,4 @@ Per-model schema:
 
 `OMLX_STREAM_FIRST_DELTA_TIMEOUT_MS` (default `120000`) controls how long the stream wrapper waits for the first meaningful body event (text delta, thinking delta, tool-call start, done, or error) after response headers arrive. On timeout the request aborts, retries once, and on the second failure emits an assistant error.
 
-Each timeout writes a `stream_first_delta_timeout` line to the provider debug log with `model`, `timeoutMs`, `attempt`, `maxAttempts`, and `final`.
+A timeout leaves no trace line of its own; the assistant error above is the only sign of it, and the extension keeps no log file to look in. With `PI_OMLX_DEBUG` set to any non-empty value, `0` included, the trace of a timed-out turn stops after `before_provider_request`; the lines go to stderr as `[pi-omlx] <event> {json}`.

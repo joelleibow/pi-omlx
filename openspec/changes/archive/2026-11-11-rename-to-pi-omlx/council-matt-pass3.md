@@ -1,0 +1,17 @@
+# Council — matt, pass 3
+
+Run `aada36f9-1b23-4572-a720-150e53cc4bf9`.
+
+## Responses
+
+- **Q1** — refine. My single grep check does not cover the probe deletion. After a plain find-and-replace, `scripts/debug-pi.ts:18` would read `PACKAGE_ID = "pi-omlx"` and `~/.pi/packages/` would still appear at :19 and :62-76, :110-117 and :147-153, plus `scripts/debug-omlx.ts:18-26`. None of those lines would contain `picker`, so the check passes while the probes still point at the wrong place. So a separate requirement is needed. I'd change its wording in one way: state it as the behavior. The repository scripts do not look for a package under `~/.pi/packages/`, and do not read a `provider-debug.log`, because pi 1.5.2 installs npm packages under `<agentDir>/npm/node_modules` and nothing writes that log. The check is a grep of `scripts/` for `.pi/packages` and `provider-debug.log`. Removing the probes changes behavior: debug-pi's timeline loses provider-row matching, which never worked. The sessions and oMLX diagnostics stay, and the requirement should say so. (research-eleanor.md Addendum 1 (debug-pi.ts:18-19, 62-76, 110-117, 147-153, 351-360; debug-omlx.ts:18-26); research-eleanor.md Addendum 1 (package-manager.js:1921-1930; no writer for provider-debug.log); michael-orientation.md trap f)
+- **Q2** — refine. Accept dropping the scenarios that depend on pi. pi keys credentials, `provider/modelId` references, `defaultProvider` and the models store by provider id alone (research-chidi.md Q2.1-Q2.3). So if the extension registers under `omlx` and reads credentials keyed `omlx`, those other scenarios follow without anything more to test. Keeping them would fail the deletion test, and marking them as Joel's to observe is not needed either. Change one thing: the claim that `test/index.test.ts` already asserts the registered id, and `test/auth-storage.test.ts` the credential key, is unverified. Eleanor cites those files only for the singleton key and the temp-directory prefixes. The design must confirm those assertions exist, or add tests for them. The requirement should also name `PROVIDER_KEY` (src/auth-storage.ts:4) as the single place the id lives, so registration and storage can't drift apart. (research-chidi.md Q2.1-Q2.4; research-eleanor.md (test/index.test.ts:13,38; test/auth-storage.test.ts:20; src/auth-storage.ts PROVIDER_KEY); michael-orientation.md §1 (src/auth-storage.ts:4))
+- **Q3** — refine. Accept keeping the predicate unchanged. I never read `src/debug.ts:18`, and my pass-1 wording, 'keep the truthiness rule', assumed a rule I had not checked. But naming the edges is Joel's provability standard, so they stay in the tests and the result is not chosen. The spec says tracing is on exactly when the current predicate at `src/debug.ts:18` holds for `PI_OMLX_DEBUG`. The tests pin unset, the empty string and `0` to whatever that predicate returns today, read from the code during design. That way the rename changes only the variable's name, and any change to which values turn tracing on becomes a separate, visible change. (research-eleanor.md (src/debug.ts:1,18); michael-orientation.md trap a (variable untested))
+
+## Recommendation changed
+
+Yes: Q1 showed that my single grep check misses the renamed probe lines. I now recommend a separate scripts requirement checked by grep. Q2 drops the provider scenarios that depend on pi, instead of marking them Joel's to observe.
+
+## Out of scope findings
+
+None

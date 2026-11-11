@@ -1,5 +1,5 @@
 {
-	"name": "pi-omlx-picker",
+	"name": "pi-omlx",
 	"version": "0.3.6",
 	"type": "module",
 	"description": "Pi extension that discovers models from a local OMLX server and registers them as a native Pi provider.",
@@ -8,7 +8,6 @@
 		"pi-package",
 		"omlx",
 		"pi",
-		"picker",
 		"model"
 	],
 	"engines": {

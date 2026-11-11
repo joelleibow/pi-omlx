@@ -7,10 +7,8 @@ import type {
 	ProviderConfig,
 } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, test } from "vitest";
-import extension from "../index.ts";
+import extension, { EXTENSION_SINGLETON_KEY } from "../index.ts";
 import { _setAuthPathForTesting } from "../src/auth-storage.ts";
-
-const singletonKey = Symbol.for("pi-omlx-picker/loaded");
 
 function callbacksReturning(...values: string[]) {
 	const queue = [...values];
@@ -37,13 +35,13 @@ let dir: string;
 beforeEach(() => {
 	dir = mkdtempSync(join(tmpdir(), "pi-omlx-picker-index-"));
 	_setAuthPathForTesting(join(dir, "auth.json"));
-	delete (globalThis as Record<PropertyKey, unknown>)[singletonKey];
+	delete (globalThis as Record<PropertyKey, unknown>)[EXTENSION_SINGLETON_KEY];
 });
 
 afterEach(() => {
 	_setAuthPathForTesting(undefined);
 	rmSync(dir, { recursive: true, force: true });
-	delete (globalThis as Record<PropertyKey, unknown>)[singletonKey];
+	delete (globalThis as Record<PropertyKey, unknown>)[EXTENSION_SINGLETON_KEY];
 });
 
 test("/login with an API key registers authenticated OMLX models", async () => {

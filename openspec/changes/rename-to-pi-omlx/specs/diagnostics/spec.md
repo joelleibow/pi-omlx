@@ -15,11 +15,6 @@ The extension SHALL turn stderr tracing on exactly when the predicate now at `sr
 - **WHEN** `PI_OMLX_DEBUG` is unset
 - **THEN** the extension writes no diagnostic lines to stderr
 
-#### Scenario: The old variable turns nothing on
-
-- **WHEN** `PI_OMLX_DEBUG` is unset and `PI_OMLX_PICKER_DEBUG` is set
-- **THEN** the extension writes no diagnostic lines to stderr
-
 #### Scenario: The empty string keeps today's answer
 
 - **WHEN** `PI_OMLX_DEBUG` is the empty string

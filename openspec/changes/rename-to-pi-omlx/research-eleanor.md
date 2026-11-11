@@ -112,3 +112,30 @@ This script is also not wholly dead: model settings, model paths, cache location
 `CONTRIBUTING.md:21–23,28–29,41–51` documents `mise run debug:omlx` and `mise run debug:pi` as usable commands and triage steps. However, `git ls-files '*mise*' '*task*' '.github/*'` finds only `.github/dependabot.yml`; there is no tracked `mise.toml` or task definition. `package.json:17–24` has check/format/typecheck/test/release scripts and does not invoke either debug script. The scripts are thus manually documented but no task mapping is present in this tracked repository snapshot; the `mise run` names cannot be executed from a checked-in definition here. `CONTRIBUTING.md:7–12` invokes `mise run verify`, `smoke:omlx`, and `verify:live`, also without tracked task definitions.
 
 **Bottom line:** Both debug scripts are real standalone diagnostic programs; neither is invoked by package scripts, and their `mise` entry points are documented but undefined in tracked files. The `~/.pi/packages/<old-name>` derivations inside them and the `provider-debug.log` premise are dead/stale components, not grounds to call either entire script dead. `debug-pi` has substantial independent live behavior, including a session path confirmed by Pi 1.5.2; `debug-omlx` primarily diagnoses local OMLX/model state and smoke artifacts.
+## Addendum 3 — how the debug scripts run
+
+From the repository root, `node scripts/debug-pi.ts sessions` worked (exit code 0). It began:
+
+```text
+== PI DEBUG ==
+time: 2026-11-11T21:30:27.208Z
+cwd: /Users/joelleibow/Projects/pi-omlx-picker
+mode: sessions
+
+== SESSIONS ==
+session root: /Users/joelleibow/.pi/agent/sessions (33 entries, ...)
+```
+
+Node accepted and executed the TypeScript directly; no fallback was needed, so `npx vite-node` and `npx tsx` were not tried.
+
+The same runner works for the other script: `node scripts/debug-omlx.ts` exited 0 and began:
+
+```text
+== OMLX DEBUG ==
+time: 2026-11-11T21:30:31.027Z
+cwd: /Users/joelleibow/Projects/pi-omlx-picker
+OMLX_BASE_URL: (default)
+OMLX_API_KEY: (unset)
+```
+
+Both are executable standalone scripts with `main()` calls at `scripts/debug-pi.ts:847` and `scripts/debug-omlx.ts:322`; `debug-pi` dispatches the requested `sessions` mode at lines 37–42.

@@ -1,11 +1,13 @@
 import { strict as assert } from "node:assert";
-import type {
-	AssistantMessage,
-	AssistantMessageEvent,
-	AssistantMessageEventStream,
-	Context,
-	Model,
-	SimpleStreamOptions,
+import {
+	type AssistantMessage,
+	type AssistantMessageEvent,
+	type AssistantMessageEventStream,
+	type Context,
+	type Model,
+	normalizeContext,
+	type SimpleStreamOptions,
+	type TranscriptContext,
 } from "@earendil-works/pi-ai";
 import { test, vi } from "vitest";
 
@@ -120,7 +122,7 @@ const NON_OMLX_MODEL: Model<"openai-completions"> = {
 	provider: "zai",
 };
 
-const EMPTY_CONTEXT: Context = { messages: [] };
+const EMPTY_CONTEXT: TranscriptContext = normalizeContext({ messages: [] });
 
 function startEvent(partial: AssistantMessage): AssistantMessageEvent {
 	return { type: "start", partial };
@@ -290,7 +292,9 @@ test("a repeat-stop triggers at most one reissue, then succeeds", async () => {
 		...partial,
 		content: [{ type: "thinking", thinking }],
 	};
-	const context: Context = { messages: [priorAssistant] };
+	const context: TranscriptContext = normalizeContext({
+		messages: [priorAssistant],
+	});
 
 	let calls = 0;
 	innerStreamModule.queueFactory(() => {

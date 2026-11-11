@@ -161,9 +161,9 @@ Rollback is the same `mv` in reverse plus the settings line back. Nothing else i
 4. The stub's three files are written to `~/Projects/pi-omlx-stub`, outside the repository, and `npm pack --dry-run` run there lists `package.json`, `LICENSE` and `extensions/pi-omlx.ts` (decision 4).
 5. Michael's implementation gate.
 6. The docs pass (decision 5), ending with the wide name check.
-7. `openspec archive`, which merges the three delta specs into the living specs and moves the change into the archive.
-8. The directory move and Joel's settings edit (decision 6).
-9. Joel publishes the stub from `~/Projects/pi-omlx-stub` whenever he chooses (decision 4). Nothing in steps 1–8 waits on it.
+7. Joel publishes the stub from `~/Projects/pi-omlx-stub` (decision 4). It comes before the archive: the archive needs every task ticked, and this task is his. Nothing technical waits on the outcome, since no file names `npm:pi-omlx`.
+8. `openspec archive`, which merges the three delta specs into the living specs and moves the change into the archive.
+9. The directory move and Joel's settings edit (decision 6). This is a hand-off rather than a step of the change: the conductor brings it to Joel after the merge, and his confirmation is `pi list` showing `../../Projects/pi-omlx` resolving under `~/Projects/pi-omlx` and the `omlx` provider back in the model list.
 
 Rollback is per step: each is a commit and reverses with `git revert`. There is no release and no persisted state to unwind, and the directory move reverses with the same `mv` plus the settings line restored.
 

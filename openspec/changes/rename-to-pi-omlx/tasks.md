@@ -1,6 +1,6 @@
 # Tasks
 
-Ordered by dependency, in `design.md`'s order of work: the two structure steps first, each green on both sides, then the three behaviour steps, each led by the check or test that fails before it. Every requirement in `specs/` maps to at least one task below, and the command that proves it is named in the task. Nothing here touches Markdown: `README.md`, `CONTRIBUTING.md` and `docs/CONFIGURATION.md` are Bambadjan's docs pass after the implementation gate.
+Ordered by dependency, in `design.md`'s order of work: the two structure steps first, each green on both sides, then the three behaviour steps, each led by the check or test that fails before it. Every requirement in `specs/` maps to at least one task below, and the command that proves it is named in the task. Nothing here touches Markdown: `README.md`, `CONTRIBUTING.md` and `docs/CONFIGURATION.md` are Bambadjan's docs pass after the implementation gate. The directory move and the `packages` edit are not tasks of this change: they can only run once the run closes, so design decision 6 and the migration plan's last step carry them, and the conductor brings them to Joel after the merge.
 
 Every vitest command below ran as `PI_CODING_AGENT_DIR=…/.pi/marbleization/rename-to-pi-omlx/agent-dir npx vitest run`, so no run touched `~/.pi/agent/cache/omlx-models.json` (its mtime is still `Nov 11 11:06:58 2026`).
 
@@ -67,8 +67,6 @@ Every vitest command below ran as `PI_CODING_AGENT_DIR=…/.pi/marbleization/ren
 - [x] 6.1 Write the stub at `~/Projects/pi-omlx-stub`. This task writes outside the repository and changes nothing in it: a `package.json` declaring `name: "pi-omlx"`, `version: "0.0.0-alpha"`, `license: "MIT"` and a description pointing at `joelleibow/pi-omlx`; a copy of `LICENSE`; and `extensions/pi-omlx.ts` whose default export is a factory with an empty body. Verification: `npm pack --dry-run` run inside that directory reports the tarball `pi-omlx-0.0.0-alpha.tgz` listing exactly `package.json`, `LICENSE` and `extensions/pi-omlx.ts`, and `git status` in this repository is unchanged by the task.
   - Evidence: the three files are written at `~/Projects/pi-omlx-stub` (no `pi-package` keyword, no `pi` manifest, no root `index.ts`). `npm pack --dry-run` there → `filename: pi-omlx-0.0.0-alpha.tgz`, `Tarball Contents` = `LICENSE`, `extensions/pi-omlx.ts`, `package.json`, `total files: 3`. `git status` here is unchanged: `?? .pi/` only, before and after.
 
-## 7. Joel's tasks
+## 7. Joel's task, before the archive
 
 - [ ] 7.1 Joel publishes the stub. From `~/Projects/pi-omlx-stub`, `npm publish` (his credentials; `npm whoami` fails in the pipeline's shell, `michael-orientation.md` trap h). His task, ticked by the conductor with his words; nothing else in the change waits on it. Verification: he reports the publish, and `npm view pi-omlx version` reports `0.0.0-alpha`.
-
-- [ ] 7.2 After the run closes, Joel moves the directory and edits pi's `packages` entry. `~/Projects/pi-omlx-picker` becomes `~/Projects/pi-omlx`, and `~/.pi/agent/settings.json:19` changes from `"../../Projects/pi-omlx-picker"` to `"../../Projects/pi-omlx"`. His task, ticked by the conductor with his words; between the move and the edit the `omlx` provider is silently absent (`package-manager.js:1194-1196`). Verification: `pi list` shows the entry as `../../Projects/pi-omlx` resolving under `~/Projects/pi-omlx`, and the `omlx` provider is back in pi's model list.

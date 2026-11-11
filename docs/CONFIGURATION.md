@@ -1,10 +1,10 @@
 # Configuration
 
-The normal path is Pi's built-in `/login` flow: choose **API key**, choose **OMLX**, enter the API key, then select an OMLX model with `/model`. The rest of this page documents the base URL override, the optional model metadata overlay, and the stream timeout knob.
+The normal path is Pi's built-in login: run `/login omlx` (or `/login`, then **Sign in with an account**, then **OMLX**), enter the base URL and API key, then select an OMLX model with `/model`. The rest of this page documents the base URL override, the optional model metadata overlay, and the stream timeout knob.
 
 ## Where credentials live
 
-`/login` writes the API key to `~/.pi/agent/auth.json` under the `omlx` provider key — the same file Pi uses for native providers. Use Pi's built-in `/logout` to remove stored OMLX credentials.
+`/login` writes the base URL and API key to `~/.pi/agent/auth.json` under the `omlx` provider key, as an `oauth`-typed credential — the same file Pi uses for native providers. Use Pi's built-in `/logout` to remove stored OMLX credentials.
 
 `pi uninstall pi-omlx-picker` does not touch `auth.json`. Reinstall picks up where you left off; use `/logout` or delete the `omlx` entry yourself to scrub.
 

@@ -30,8 +30,8 @@ pi install npm:pi-omlx-picker
 ## 🚀 Quick Start
 
 1. Start your local OMLX server.
-2. Run `/login` in Pi, choose **API key**, then choose **OMLX**.
-3. Enter your OMLX API key.
+2. Run `/login omlx` in Pi (or run `/login`, choose **Sign in with an account**, then choose **OMLX**).
+3. Enter your OMLX server's base URL, such as `http://localhost:8000`, then its API key. Leave the key empty for a keyless server.
 4. Type `/model` to see and select your OMLX models.
 
 The default base URL is `http://127.0.0.1:8000/v1`. Set `OMLX_BASE_URL` before starting Pi if your OMLX server uses a different URL.

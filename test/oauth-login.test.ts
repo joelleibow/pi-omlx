@@ -4,6 +4,7 @@ import { test } from "vitest";
 import {
 	createLoginOmlx,
 	getOmlxApiKey,
+	OMLX_CREDENTIAL_EXPIRES,
 	refreshOmlxToken,
 } from "../src/oauth-login.ts";
 
@@ -73,7 +74,23 @@ test("getOmlxApiKey reads the access field", () => {
 	);
 });
 
-test("refreshOmlxToken returns credentials unchanged", async () => {
-	const creds = { access: "abc", refresh: "", expires: 0, baseUrl: "u" };
-	assert.deepEqual(await refreshOmlxToken(creds), creds);
+test("loginOmlx credential keeps a finite, future expiry through auth.json", async () => {
+	const loginOmlx = createLoginOmlx(registerOk);
+	const creds = await loginOmlx(
+		callbacksReturning("http://127.0.0.1:8000", "omlx-key"),
+	);
+	// pi persists credentials with JSON.stringify; Infinity would become null.
+	const stored = JSON.parse(JSON.stringify(creds));
+	assert.ok(Number.isFinite(stored.expires));
+	assert.ok(stored.expires > Date.now() + 100 * 365 * 24 * 3600 * 1000);
+});
+
+test("refreshOmlxToken keeps the key and repairs a null expiry", async () => {
+	const creds = { access: "abc", refresh: "", expires: null, baseUrl: "u" };
+	assert.deepEqual(
+		await refreshOmlxToken(
+			creds as unknown as Parameters<typeof refreshOmlxToken>[0],
+		),
+		{ ...creds, expires: OMLX_CREDENTIAL_EXPIRES },
+	);
 });

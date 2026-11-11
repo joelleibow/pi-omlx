@@ -12,6 +12,11 @@ import { normalizeBaseUrl } from "./config.ts";
  * storage. This login path deliberately fetches immediately; the background
  * poll is only a fallback for startup/refresh outside the login flow.
  */
+// OMLX keys never expire, but pi needs a finite number: Infinity serializes to
+// null in auth.json, which pi reads as already expired (refreshing on every
+// request) and its read-only auth check rejects as an invalid auth.json.
+export const OMLX_CREDENTIAL_EXPIRES = Number.MAX_SAFE_INTEGER;
+
 export type RegisterOmlxFromLogin = (
 	baseUrl: string,
 	apiKey: string,
@@ -50,7 +55,7 @@ export function createLoginOmlx(register: RegisterOmlxFromLogin) {
 		return {
 			access: apiKey,
 			refresh: "",
-			expires: Number.POSITIVE_INFINITY,
+			expires: OMLX_CREDENTIAL_EXPIRES,
 			baseUrl,
 		};
 	};
@@ -59,7 +64,8 @@ export function createLoginOmlx(register: RegisterOmlxFromLogin) {
 export function refreshOmlxToken(
 	credentials: OAuthCredentials,
 ): Promise<OAuthCredentials> {
-	return Promise.resolve(credentials);
+	// Also repairs credentials stored by older versions with expires: null.
+	return Promise.resolve({ ...credentials, expires: OMLX_CREDENTIAL_EXPIRES });
 }
 
 export function getOmlxApiKey(credentials: OAuthCredentials): string {

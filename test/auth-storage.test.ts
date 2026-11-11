@@ -26,7 +26,16 @@ afterEach(() => {
 	rmSync(dir, { recursive: true, force: true });
 });
 
+test("PROVIDER_KEY is omlx", () => {
+	assert.equal(PROVIDER_KEY, "omlx");
+});
+
 test("loadOmlxCredential returns undefined when nothing is stored", () => {
+	assert.equal(loadOmlxCredential(), undefined);
+});
+
+test("load ignores a credential keyed by the package name", () => {
+	writeAuth({ "pi-omlx": { type: "api_key", key: "package-name-key" } });
 	assert.equal(loadOmlxCredential(), undefined);
 });
 

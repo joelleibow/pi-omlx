@@ -11,6 +11,8 @@ mise run verify
 
 A live OMLX server is needed for `mise run smoke:omlx` and `mise run verify:live`.
 
+Tests write `cache/omlx-models.json` under the Pi agent directory, so a bare run of `mise run verify`, `npm run check` or `npm test` replaces your own cached model list with test fixtures. Point `PI_CODING_AGENT_DIR` at an empty scratch directory before you run them.
+
 ## Tasks
 
 Run via [`mise`](https://mise.jdx.dev/):

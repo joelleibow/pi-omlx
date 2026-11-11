@@ -1,6 +1,17 @@
 import { strict as assert } from "node:assert";
+import type { ProviderModelConfig } from "@earendil-works/pi-coding-agent";
 import { test } from "vitest";
 import { toProviderConfig } from "../src/provider.ts";
+
+// The registered models are a union of chat, image and classifier entries, and
+// only the chat member carries `reasoning` and `compat`. Narrow once so a model
+// that is not a chat entry fails loudly instead of skipping an assertion.
+function chatModel(m: ProviderModelConfig | undefined) {
+	if (m === undefined) throw new Error("no model entry");
+	if (m.type !== undefined && m.type !== "chat")
+		throw new Error(`not a chat model: ${m.type}`);
+	return m;
+}
 
 test("toProviderConfig marks apiKey env var references explicitly", () => {
 	const config = toProviderConfig("http://example.test/v1", "OMLX_API_KEY", []);
@@ -46,30 +57,30 @@ test("toProviderConfig marks only explicit thinking_default true as reasoning ca
 		},
 	]);
 
-	assert.equal(config.models?.[0]?.reasoning, true);
-	assert.equal(config.models?.[1]?.reasoning, false);
-	assert.equal(config.models?.[2]?.reasoning, false);
-	assert.equal(config.models?.[3]?.reasoning, false);
-	assert.deepEqual(config.models?.[0]?.compat, {
+	assert.equal(chatModel(config.models?.[0]).reasoning, true);
+	assert.equal(chatModel(config.models?.[1]).reasoning, false);
+	assert.equal(chatModel(config.models?.[2]).reasoning, false);
+	assert.equal(chatModel(config.models?.[3]).reasoning, false);
+	assert.deepEqual(chatModel(config.models?.[0]).compat, {
 		supportsDeveloperRole: false,
 		supportsReasoningEffort: false,
 		supportsLongCacheRetention: true,
 		maxTokensField: "max_tokens",
 		thinkingFormat: "qwen-chat-template",
 	});
-	assert.deepEqual(config.models?.[1]?.compat, {
+	assert.deepEqual(chatModel(config.models?.[1]).compat, {
 		supportsDeveloperRole: false,
 		supportsReasoningEffort: false,
 		supportsLongCacheRetention: true,
 		maxTokensField: "max_tokens",
 	});
-	assert.deepEqual(config.models?.[2]?.compat, {
+	assert.deepEqual(chatModel(config.models?.[2]).compat, {
 		supportsDeveloperRole: false,
 		supportsReasoningEffort: false,
 		supportsLongCacheRetention: true,
 		maxTokensField: "max_tokens",
 	});
-	assert.deepEqual(config.models?.[3]?.compat, {
+	assert.deepEqual(chatModel(config.models?.[3]).compat, {
 		supportsDeveloperRole: false,
 		supportsReasoningEffort: false,
 		supportsLongCacheRetention: true,

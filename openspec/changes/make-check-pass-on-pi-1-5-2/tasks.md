@@ -38,7 +38,14 @@ Coverage, requirement by requirement: Requirement 1's exit-zero scenario by 4.1 
 
 ## 3. The provider test helper
 
-- [ ] 3.1 Add `chatModel` and route the eight reads through it, with `npx tsc --noEmit` as the check that catches a mistake: the file's eight TS2339 are there before the task and gone after. The helper is the design's: it throws on `undefined`, throws unless `type` is undefined or `"chat"`, then returns `m` (`design.md`, decision 4; `council.md`, "Michael's Rulings"). Verification: `npx tsc --noEmit` prints nothing, and `PI_CODING_AGENT_DIR=<scratch directory> npx vitest run test/provider.test.ts` passes 4/4.
+- [x] 3.1 Add `chatModel` and route the eight reads through it, with `npx tsc --noEmit` as the check that catches a mistake: the file's eight TS2339 are there before the task and gone after. The helper is the design's: it throws on `undefined`, throws unless `type` is undefined or `"chat"`, then returns `m` (`design.md`, decision 4; `council.md`, "Michael's Rulings"). Verification: `npx tsc --noEmit` prints nothing, and `PI_CODING_AGENT_DIR=<scratch directory> npx vitest run test/provider.test.ts` passes 4/4.
+  - Evidence:
+    - Before the task: the file's eight TS2339, recorded in 1.1.
+    - `test/provider.test.ts` now has `chatModel(m: ProviderModelConfig | undefined)`, exactly the design's: throws on `undefined`, throws unless `type` is `undefined` or `"chat"`, returns `m`. The four `reasoning` reads and the four `compat` `deepEqual`s go through it. `ProviderModelConfig` is imported as a type from `@earendil-works/pi-coding-agent`; the pre-existing cast at `:94` is untouched.
+    - After: `npx tsc --noEmit` prints nothing (0 errors, the `rg -c` match exited 1 with no count).
+    - `PI_CODING_AGENT_DIR=.pi/marbleization/make-check-pass-on-pi-1-5-2/agent-dir npx vitest run test/provider.test.ts` -> `Tests 4 passed (4)`.
+    - `npx biome check test/provider.test.ts` -> `Checked 1 file in 2ms. No fixes applied.`
+    - The helper's `undefined` throw is not exercised by any test; the mutation in 3.2 is the design's proof that it bites.
 - [ ] 3.2 Show the helper still bites, with the mutation and its revert. In a scratch edit, set the condition at `src/provider.ts:61` to `thinkingDefault !== false`, run `PI_CODING_AGENT_DIR=<scratch directory> npx vitest run test/provider.test.ts` and record the failure, then revert the edit and record the test green again. Verification: the mutated run reports one failing test, the reverted run passes 4/4, and `git diff -- src/provider.ts` is empty afterwards, so no part of the mutation lands (`design.md`, decision 4; `council.md`, "Michael's Rulings").
 
 ## 4. The whole check and the two diff checks

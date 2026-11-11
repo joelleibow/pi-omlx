@@ -17,7 +17,7 @@ function writeAuth(data: Record<string, unknown>): void {
 }
 
 beforeEach(() => {
-	dir = mkdtempSync(join(tmpdir(), "pi-omlx-picker-auth-"));
+	dir = mkdtempSync(join(tmpdir(), "pi-omlx-auth-"));
 	authPath = join(dir, "auth.json");
 	_setAuthPathForTesting(authPath);
 });

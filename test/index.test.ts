@@ -36,7 +36,7 @@ function jsonResponse(body: unknown): Response {
 let dir: string;
 
 beforeEach(() => {
-	dir = mkdtempSync(join(tmpdir(), "pi-omlx-picker-index-"));
+	dir = mkdtempSync(join(tmpdir(), "pi-omlx-index-"));
 	_setAuthPathForTesting(join(dir, "auth.json"));
 	delete (globalThis as Record<PropertyKey, unknown>)[EXTENSION_SINGLETON_KEY];
 });

@@ -57,7 +57,7 @@ function storeCredential(baseUrl: string, apiKey: string): void {
 }
 
 beforeEach(() => {
-	dir = mkdtempSync(join(tmpdir(), "pi-omlx-picker-config-"));
+	dir = mkdtempSync(join(tmpdir(), "pi-omlx-config-"));
 	authPath = join(dir, "auth.json");
 	_setAuthPathForTesting(authPath);
 });

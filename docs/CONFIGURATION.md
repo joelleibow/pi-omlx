@@ -54,4 +54,4 @@ Per-model schema:
 
 `OMLX_STREAM_FIRST_DELTA_TIMEOUT_MS` (default `120000`) controls how long the stream wrapper waits for the first meaningful body event (text delta, thinking delta, tool-call start, done, or error) after response headers arrive. On timeout the request aborts, retries once, and on the second failure emits an assistant error.
 
-Nothing about a timeout is written to disk: the extension keeps no log file. Set `PI_OMLX_DEBUG` to trace its events, which go to stderr as `[pi-omlx] <event> {json}` lines.
+A timeout leaves no trace line of its own; the assistant error above is the only sign of it, and the extension keeps no log file to look in. With `PI_OMLX_DEBUG` set to any non-empty value, `0` included, the trace of a timed-out turn stops after `before_provider_request`; the lines go to stderr as `[pi-omlx] <event> {json}`.

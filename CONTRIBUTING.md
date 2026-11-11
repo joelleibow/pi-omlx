@@ -24,7 +24,7 @@ Run via [`mise`](https://mise.jdx.dev/):
 
 ## Triage order
 
-1. Reproduce the stuck turn with `PI_OMLX_DEBUG` set: the extension writes `[pi-omlx] <event> {json}` lines to stderr in the terminal that started Pi, and keeps no log file. The events are `model_select`, `before_provider_request`, `provider_registered`, `stream_error_normalized`, `stream_simple_entered`, `stream_simple_bypassed` and `stream_throw_normalized`. The latest `mise run smoke:omlx` proof lives in `log/smoke-test/<iso-timestamp>.json`.
+1. Reproduce the stuck turn with `PI_OMLX_DEBUG` set to any non-empty value, `0` included: the extension writes `[pi-omlx] <event> {json}` lines to stderr in the terminal that started Pi, and keeps no log file. A stuck turn shows as a trace that stops after `before_provider_request`. The events are `model_select`, `before_provider_request`, `provider_registered`, `stream_error_normalized`, `stream_simple_entered`, `stream_simple_bypassed` and `stream_throw_normalized`. The latest `mise run smoke:omlx` proof lives in `log/smoke-test/<iso-timestamp>.json`.
 2. Inspect Pi host state: `mise run debug:pi`.
 3. Inspect OMLX config and model files: `mise run debug:omlx`.
 4. Run live smoke: `mise run smoke:omlx`.
@@ -37,7 +37,9 @@ Most fixes are upstream (OMLX `model_settings.json`, `chat_template.jinja`), not
 
 ```text
 symptom
-  ├─ package didn't load, wrong install, stale session, compaction, takeover
+  ├─ package didn't load, wrong install
+  │   └─ pi list
+  ├─ stale session, compaction, takeover
   │   └─ mise run debug:pi
   ├─ model alias, model settings, template, rope config, OMLX/HF cache
   │   └─ mise run debug:omlx

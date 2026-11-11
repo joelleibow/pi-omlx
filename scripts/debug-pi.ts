@@ -15,13 +15,9 @@ type JsonObject = Record<string, unknown>;
 const HOME = homedir();
 const PI_HOME = join(HOME, ".pi");
 const SESSION_ROOT = join(PI_HOME, "agent", "sessions");
-const PACKAGE_ID = "pi-omlx-picker";
-const INSTALLED_PACKAGE = join(PI_HOME, "packages", PACKAGE_ID);
 const PI_CONFIG = join(PI_HOME, "config.json");
 const SKILLS_LOCK = join(PI_HOME, "skills-lock.json");
 const PI_LOG_DIR = join(PI_HOME, "log");
-const PACKAGE_LOG_DIR = join(INSTALLED_PACKAGE, "log");
-const PACKAGE_DEBUG_LOG = join(PACKAGE_LOG_DIR, "provider-debug.log");
 const OMLX_HOME = join(HOME, ".omlx");
 const OMLX_SERVER_LOG = join(OMLX_HOME, "logs", "server.log");
 
@@ -59,20 +55,8 @@ function printInstall(): void {
 	pathSummary("~/.pi", PI_HOME);
 	line(`~/.pi realpath: ${safeRealpath(PI_HOME) ?? "(missing)"}`);
 	gitSummary("~/.pi git", PI_HOME);
-	pathSummary("installed package", INSTALLED_PACKAGE);
-	line(
-		`installed package realpath: ${safeRealpath(INSTALLED_PACKAGE) ?? "(missing)"}`,
-	);
 	line(
 		`repo realpath: ${safeRealpath(process.cwd()) ?? resolve(process.cwd())}`,
-	);
-	line(
-		`installed package is this repo: ${safeRealpath(INSTALLED_PACKAGE) === safeRealpath(process.cwd()) ? "yes" : "no"}`,
-	);
-	fileJsonSummary(
-		"installed package.json",
-		join(INSTALLED_PACKAGE, "package.json"),
-		["name", "version", "description"],
 	);
 }
 
@@ -111,9 +95,6 @@ function printLogs(): void {
 	section("LOGS");
 	pathSummary("Pi log dir", PI_LOG_DIR);
 	printLatestFiles("Pi logs", PI_LOG_DIR, 10);
-	pathSummary("package log dir", PACKAGE_LOG_DIR);
-	printLatestFiles("package logs", PACKAGE_LOG_DIR, 10);
-	printProviderDebugSummary(PACKAGE_DEBUG_LOG);
 }
 
 function printCache(): void {
@@ -132,7 +113,7 @@ function printTimeline(args: string[]): void {
 	section("TIMELINE");
 	const requestedWindowMinutes = numberArg(args, "--minutes") ?? 3;
 	const anchorInput = firstNonFlag(args);
-	const anchor = resolveTimelineAnchor(anchorInput);
+	const anchor = anchorInput ? resolveTimelineAnchor(anchorInput) : undefined;
 	if (!anchor) {
 		line(
 			"no anchor found; pass a session id, session file path, or ISO timestamp",
@@ -144,95 +125,14 @@ function printTimeline(args: string[]): void {
 		`anchor: ${anchor.date.toISOString()} (${formatLocal(anchor.date)} local)`,
 	);
 
-	const providerRows = readProviderRows(PACKAGE_DEBUG_LOG);
-	const request =
-		findProviderRequest(providerRows, anchor.date) ??
-		latestProviderRequest(providerRows);
-	if (!request) {
-		line("no provider request found in provider-debug.log");
-		return;
-	}
-	const requestDate = parseIso(stringValue(request.ts));
-	const correlationId = stringValue(request.correlationId);
-	if (!requestDate) {
-		line("provider request has no parseable timestamp");
-		return;
-	}
-
-	const start = new Date(requestDate.getTime() - 60_000);
-	const end = new Date(requestDate.getTime() + requestedWindowMinutes * 60_000);
+	const start = new Date(anchor.date.getTime() - 60_000);
+	const end = new Date(anchor.date.getTime() + requestedWindowMinutes * 60_000);
 	line(
-		`request: ${requestDate.toISOString()} (${formatLocal(requestDate)} local)`,
-	);
-	if (correlationId) line(`correlationId: ${correlationId}`);
-	const payload = asObject(request.payload);
-	if (payload) {
-		line(
-			`payload: model=${stringValue(request.model) ?? "?"}, messages=${stringValue(payload.messageCount) ?? "?"}, chars=${
-				stringValue(payload.messageChars) ?? "?"
-			}, max_tokens=${stringValue(payload.max_tokens) ?? "?"}, stream=${stringValue(payload.stream) ?? "?"}`,
-		);
-		const preview = stringValue(payload.lastMessagePreview);
-		if (preview) line(`preview: ${preview.slice(0, 360).replace(/\s+/g, " ")}`);
-	}
-	line(
-		`window: ${start.toISOString()} .. ${end.toISOString()} (${requestedWindowMinutes}m after request)`,
+		`window: ${start.toISOString()} .. ${end.toISOString()} (${requestedWindowMinutes}m after anchor)`,
 	);
 
-	printProviderTimeline(providerRows, start, end, correlationId);
 	printOmlxTimeline(start, end);
 	printChangedFilesTimeline(start, end);
-}
-
-function printProviderTimeline(
-	rows: JsonObject[],
-	start: Date,
-	end: Date,
-	correlationId: string | undefined,
-): void {
-	console.log("\n[provider events]");
-	const selected = rows.filter((row) => {
-		const date = parseIso(stringValue(row.ts));
-		if (!date || date < start || date > end) return false;
-		const kind = stringValue(row.kind) ?? "";
-		return (
-			!correlationId ||
-			stringValue(row.correlationId) === correlationId ||
-			[
-				"extension_load",
-				"session_start",
-				"native_thinking_applied",
-				"catalog_status_loaded",
-			].includes(kind)
-		);
-	});
-	if (selected.length === 0) {
-		line("none");
-		return;
-	}
-	for (const row of selected) {
-		const bits = [
-			stringValue(row.ts) ?? "?",
-			stringValue(row.kind) ?? "?",
-			stringValue(row.correlationId),
-			stringValue(row.model),
-			stringValue(asObject(row.message)?.stopReason),
-			stringValue(row.status),
-		].filter(Boolean);
-		line(bits.join(" "));
-	}
-	const hasTerminal = selected.some((row) =>
-		[
-			"message_update",
-			"assistant_message_metrics",
-			"turn_end",
-			"tool_call",
-		].includes(stringValue(row.kind) ?? ""),
-	);
-	if (!hasTerminal)
-		line(
-			"diagnosis: provider opened request but no assistant/tool/turn progress was logged in this window",
-		);
 }
 
 function printOmlxTimeline(start: Date, end: Date): void {
@@ -341,7 +241,6 @@ function printChangedFilesTimeline(start: Date, end: Date): void {
 		join(OMLX_HOME, "cache"),
 		join(OMLX_HOME, "logs"),
 		SESSION_ROOT,
-		PACKAGE_LOG_DIR,
 	].filter(
 		(path, index, all) => existsSync(path) && all.indexOf(path) === index,
 	);
@@ -358,15 +257,8 @@ function printChangedFilesTimeline(start: Date, end: Date): void {
 }
 
 function resolveTimelineAnchor(
-	input: string | undefined,
+	input: string,
 ): { date: Date; note?: string } | undefined {
-	if (!input) {
-		const latest = latestProviderRequest(readProviderRows(PACKAGE_DEBUG_LOG));
-		const date = parseIso(stringValue(latest?.ts));
-		return date
-			? { date, note: "anchor source: latest provider request" }
-			: undefined;
-	}
 	if (existsSync(input)) {
 		const date = dateFromSessionPath(input) ?? safeStat(input)?.mtime;
 		return date ? { date, note: `anchor source: file ${input}` } : undefined;
@@ -381,45 +273,7 @@ function resolveTimelineAnchor(
 			? { date, note: `anchor source: session file ${found}` }
 			: undefined;
 	}
-	const uuidPrefix = input.slice(0, 8);
-	const providerRows = readProviderRows(PACKAGE_DEBUG_LOG);
-	const nearId = providerRows.find(
-		(row) =>
-			JSON.stringify(row).includes(input) ||
-			JSON.stringify(row).includes(uuidPrefix),
-	);
-	const date = parseIso(stringValue(nearId?.ts));
-	if (date)
-		return { date, note: `anchor source: provider log match for ${input}` };
 	return undefined;
-}
-
-function findProviderRequest(
-	rows: JsonObject[],
-	anchor: Date,
-): JsonObject | undefined {
-	return rows.find((row) => {
-		if (row.kind !== "before_provider_request") return false;
-		const date = parseIso(stringValue(row.ts));
-		return Boolean(
-			date &&
-				date >= anchor &&
-				date.getTime() - anchor.getTime() <= 10 * 60_000,
-		);
-	});
-}
-
-function latestProviderRequest(rows: JsonObject[]): JsonObject | undefined {
-	return rows.filter((row) => row.kind === "before_provider_request").at(-1);
-}
-
-function readProviderRows(path: string): JsonObject[] {
-	if (!existsSync(path)) return [];
-	return readFileSync(path, "utf8")
-		.split(/\r?\n/)
-		.filter(Boolean)
-		.map(parseLogLine)
-		.filter((entry): entry is JsonObject => Boolean(entry));
 }
 
 function findSessionFileById(id: string): string | undefined {
@@ -604,45 +458,6 @@ function printRecentSessionDirs(): void {
 	for (const dir of dirs) pathSummary(dir, dir);
 }
 
-function printProviderDebugSummary(path: string): void {
-	console.log(`\n[provider debug summary]`);
-	if (!existsSync(path)) {
-		line(`missing: ${path}`);
-		return;
-	}
-	pathSummary("provider debug log", path);
-	const entries = tailLines(path, 700)
-		.map(parseLogLine)
-		.filter((entry): entry is JsonObject => Boolean(entry));
-	if (entries.length === 0) {
-		line("no parseable JSON log lines in last 700 lines");
-		return;
-	}
-	printCounts(
-		"recent kinds",
-		entries.map((entry) => stringValue(entry.kind) ?? "(unknown)"),
-		12,
-	);
-	const modelEvents = entries
-		.filter((entry) =>
-			[
-				"session_start",
-				"model_select",
-				"before_provider_request",
-				"turn_end",
-			].includes(stringValue(entry.kind) ?? ""),
-		)
-		.map(
-			(entry) =>
-				`${stringValue(entry.kind) ?? "?"}:${stringValue(entry.model) ?? stringValue(entry.selected) ?? "?"}`,
-		)
-		.slice(-16);
-	if (modelEvents.length > 0) {
-		line("recent runtime events:");
-		for (const event of modelEvents) line(`- ${event}`);
-	}
-}
-
 function printLatestFiles(label: string, dir: string, limit: number): void {
 	console.log(`\n[${label}]`);
 	if (!existsSync(dir)) {
@@ -740,21 +555,6 @@ function parseJson(text: string): unknown {
 	} catch {
 		return undefined;
 	}
-}
-
-function parseLogLine(lineText: string): JsonObject | undefined {
-	const parsed = asObject(parseJson(lineText));
-	if (parsed) return parsed;
-	const jsonStart = lineText.indexOf("{");
-	if (jsonStart < 0) return undefined;
-	return asObject(parseJson(lineText.slice(jsonStart)));
-}
-
-function tailLines(path: string, maxLines: number): string[] {
-	return readFileSync(path, "utf8")
-		.split(/\r?\n/)
-		.filter(Boolean)
-		.slice(-maxLines);
 }
 
 function findAllOnPath(name: string): string[] {

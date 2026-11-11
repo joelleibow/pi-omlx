@@ -69,4 +69,6 @@ Every vitest command below ran as `PI_CODING_AGENT_DIR=…/.pi/marbleization/ren
 
 ## 7. Joel's task, before the archive
 
-- [ ] 7.1 Joel publishes the stub. From `~/Projects/pi-omlx-stub`, `npm publish` (his credentials; `npm whoami` fails in the pipeline's shell, `michael-orientation.md` trap h). His task, ticked by the conductor with his words; nothing else in the change waits on it. Verification: he reports the publish, and `npm view pi-omlx version` reports `0.0.0-alpha`.
+- [x] 7.1 Joel publishes the stub. From `~/Projects/pi-omlx-stub`, `npm publish` (his credentials; `npm whoami` fails in the pipeline's shell, `michael-orientation.md` trap h). His task, ticked by the conductor with his words; nothing else in the change waits on it. Verification: he reports the publish, and `npm view pi-omlx version` reports `0.0.0-alpha`.
+
+  - Joel, 2026-11-11: "Okay. It's published." He ran `npm publish --tag alpha` from `~/Projects/pi-omlx-stub` after `npm login`: npm 11.19 refuses a prerelease without `--tag`, and rejects a tag that parses as a version (`--tag 0.0.0-alpha`), so the bare `npm publish` this task named would have failed. Registry check: `npm view pi-omlx versions dist-tags` → `["0.0.0-alpha", "0.0.0-stage"]`, `{ latest: '0.0.0-alpha', alpha: '0.0.0-alpha' }`, maintainer `joelleibow`. `0.0.0-stage` is npm's own placeholder from creating a new package.

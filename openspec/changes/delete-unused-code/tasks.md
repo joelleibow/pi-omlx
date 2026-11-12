@@ -69,7 +69,7 @@ Every task is committed separately. A task that checks the shape of its diff mea
   - Boundary cases: a call site that already passed nothing compiles unchanged once the parameter is gone; the first-delta timeout behaviour is untouched.
   - Traces to: design step 4, decision 7; Michael §3(f).
 
-- [ ] 3.3 Delete `state.modelSettingsPath` and `state.lastRefreshAt`, `registerModels`' fifth parameter and the argument that feeds it. Verify: `npm run check` green.
+- [x] 3.3 Delete `state.modelSettingsPath` and `state.lastRefreshAt`, `registerModels`' fifth parameter and the argument that feeds it. Verify: `npm run check` green.
 
   - Red evidence: removing the two fields from the state type makes `npm run typecheck` fail on the writes to them; removing the fifth parameter makes it fail at `registerModels`' call site.
   - Green evidence: both writes and the argument are gone, and `rg -n 'lastRefreshAt|modelSettingsPath' index.ts src test` leaves every hit as the ordinary local path variable and the argument that feed the overlay fetch, never a `state.` field. `state.lastError` still has its reader.

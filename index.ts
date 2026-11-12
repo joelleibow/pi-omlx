@@ -40,8 +40,6 @@ interface State {
 	registered: boolean;
 	stopped: boolean;
 	lastError: string | undefined;
-	lastRefreshAt: string | undefined;
-	modelSettingsPath: string | undefined;
 	startedLoginOnly: boolean;
 	pendingNotice: string | undefined;
 	warned: boolean;
@@ -58,8 +56,6 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 		registered: false,
 		stopped: false,
 		lastError: undefined,
-		lastRefreshAt: undefined,
-		modelSettingsPath: undefined,
 		startedLoginOnly: false,
 		pendingNotice: undefined,
 		warned: false,
@@ -205,7 +201,6 @@ function registerModels(
 	state: State,
 	credential: ConfiguredOmlxCredential,
 	models: OmlxModel[],
-	modelSettingsPath?: string,
 ): void {
 	const keyless = credential.apiKey === "";
 	// registerProvider merges the previous registration's defined values and
@@ -223,8 +218,6 @@ function registerModels(
 	state.catalog = models;
 	state.registered = true;
 	state.lastError = undefined;
-	state.lastRefreshAt = new Date().toISOString();
-	state.modelSettingsPath = modelSettingsPath;
 	omlxDebug("provider_registered", {
 		provider: PROVIDER,
 		models: models.length,
@@ -275,8 +268,6 @@ function registerCachedOrSetupModels(
 		state.lastError = credential.configured
 			? "No cached OMLX models with real max_context_window/max_tokens; waiting for live catalog refresh."
 			: "OMLX credentials are not set. Run /login and choose OMLX.";
-		state.lastRefreshAt = new Date().toISOString();
-		state.modelSettingsPath = undefined;
 		registerLoginOnlyProvider(pi, state);
 		return credential;
 	}
@@ -348,7 +339,7 @@ async function fetchAndRegister(
 	}
 
 	writeCatalogCache(credential.apiRoot, registrable);
-	registerModels(pi, state, credential, registrable, modelSettingsPath);
+	registerModels(pi, state, credential, registrable);
 	return "registered";
 }
 

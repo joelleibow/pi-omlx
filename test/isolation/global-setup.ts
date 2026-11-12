@@ -1,4 +1,4 @@
-import { mkdtempSync, realpathSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { TestProject } from "vitest/node";
@@ -19,12 +19,21 @@ const CALLER_ENV_KEYS = [
 	"PI_OMLX_DEBUG",
 ] as const;
 
-export default function setup(project: TestProject): void {
+let root: string | undefined;
+
+export function setup(project: TestProject): void {
 	// Real path, so the path the environment carries and the path the guard
 	// compares are the same string (macOS: /var/... resolves to /private/var/...).
-	const root = mkdtempSync(join(realpathSync(tmpdir()), "pi-omlx-test-"));
+	root = mkdtempSync(join(realpathSync(tmpdir()), "pi-omlx-test-"));
 	process.env.HOME = join(root, "home");
 	process.env.PI_CODING_AGENT_DIR = join(root, "agent");
 	for (const key of CALLER_ENV_KEYS) delete process.env[key];
 	project.provide("isolationRoot", root);
+}
+
+export function teardown(): void {
+	if (root === undefined) return;
+	// shortcut: the root leaks on SIGINT, SIGTERM and SIGKILL; add
+	// process.once("exit") removal if leaked pi-omlx-test-* roots accumulate.
+	rmSync(root, { recursive: true, force: true });
 }

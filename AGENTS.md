@@ -16,7 +16,7 @@ Dependencies come from `npm install`. [CONTRIBUTING.md](./CONTRIBUTING.md) also 
 
 - Markdown documentation lives in `docs/`, decisions in `docs/adr/`, and the system's shape in `ARCHITECTURE.md`. This file carries commands, conventions and traps only.
 - New tests reach the credential store through the agent directory, never through a test-only seam. The seams that exist are another card's work.
-- Add any new path a test reads outside the repository to the guard's list in `test/isolation/worker-setup.ts`; the run will not notice it escaping otherwise.
+- Add any new path a test reads outside the repository to the guard's list in `test/isolation/worker-setup.ts`, and any new `process.env` key the extension reads to `CALLER_ENV_KEYS` in `test/isolation/global-setup.ts`; otherwise a path can escape and a caller's key can reach the run.
 - No suppressions: `@ts-ignore`, `@ts-expect-error`, `@ts-nocheck` and `biome-ignore` are forbidden by the repository's `verification` spec.
 
 ## Traps

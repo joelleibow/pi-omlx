@@ -238,13 +238,11 @@ interface CacheFixture {
 	savedAt: number;
 }
 
-// CACHE_FILE is captured at import (src/catalog.ts:567), so the file the
-// extension reads and writes is the isolation root's, whatever
-// PI_CODING_AGENT_DIR points at while a test runs. The production write mkdirs
-// the agent directory it resolves at call time, which is not this one, so a
-// test that expects that write to land creates this directory itself.
+// The cache file under the test's own agent directory: `dir` is what
+// driveExtension points PI_CODING_AGENT_DIR at, and the extension derives the
+// cache path from it at each read and each write.
 function cacheFixturePath(): string {
-	return join(inject("isolationRoot"), "agent", "cache", "omlx-models.json");
+	return join(dir, "cache", "omlx-models.json");
 }
 
 function writeCacheFixture(apiRoot: string, models: OmlxModel[]): void {

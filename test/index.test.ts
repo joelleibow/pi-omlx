@@ -309,6 +309,10 @@ async function driveExtension(
 	const write = vi
 		.spyOn(process.stderr, "write")
 		.mockImplementation(() => true);
+	// vitest intercepts console.* before process.stderr.write, so seeing what
+	// the extension puts on stderr takes both observers.
+	const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+	const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => {});
 	vi.useFakeTimers();
 	try {
 		// Loaded after withEnv, so an entry module that sets the environment has
@@ -324,12 +328,18 @@ async function driveExtension(
 			lastRegistered: fake.lastRegistered,
 			startSession: fake.startSession,
 			shutdown: fake.shutdown,
-			stderr: () => write.mock.calls.map(([chunk]) => String(chunk)),
+			stderr: () => [
+				...write.mock.calls.map(([chunk]) => String(chunk)),
+				...consoleError.mock.calls.map((call) => call.map(String).join(" ")),
+				...consoleWarn.mock.calls.map((call) => call.map(String).join(" ")),
+			],
 		});
 	} finally {
 		vi.useRealTimers();
 		fake.shutdown();
 		write.mockRestore();
+		consoleError.mockRestore();
+		consoleWarn.mockRestore();
 		globalThis.fetch = originalFetch;
 		restoreEnv();
 	}

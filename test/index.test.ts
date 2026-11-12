@@ -629,3 +629,39 @@ test("a request that never answers does not delay a session with no cache", asyn
 function neverAnswered(): Promise<Response> {
 	return new Promise<Response>(() => {});
 }
+
+// Requirement 2: the arrived models are registered for the picker and pi's own
+// choice of starting model is left alone.
+test("a late catalog registers under omlx and moves no model", async () => {
+	storeCredential(storedOAuth(STORED_KEY));
+	removeCacheFixture();
+	await driveExtension({}, async ({ calls, setModels }) => {
+		assert.deepEqual(setModels, []);
+		const registrations = calls.filter((call) => call.kind === "register");
+		const late = registrations.at(-1);
+		assert.equal(late?.provider, "omlx");
+		assert.deepEqual(
+			late?.config?.models?.map((model) => model.id),
+			["real-model"],
+		);
+	});
+});
+
+// Requirement 2, boundary case: a cached start registers under omlx as well.
+test("a cached start registers under omlx without choosing a model", async () => {
+	storeCredential(storedOAuth(STORED_KEY));
+	writeCacheFixture(FIXTURE_API_ROOT, [
+		{ id: "cached-model", contextWindow: 32768, maxTokens: 4096 },
+	]);
+	await driveExtension({}, async ({ calls, setModels }) => {
+		assert.deepEqual(setModels, []);
+		// The startup registration is the first one; the poll's tick registers the
+		// fetched catalog after it.
+		const startup = calls.find((call) => call.kind === "register");
+		assert.equal(startup?.provider, "omlx");
+		assert.deepEqual(
+			startup?.config?.models?.map((model) => model.id),
+			["cached-model"],
+		);
+	});
+});

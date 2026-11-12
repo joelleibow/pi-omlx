@@ -3,7 +3,7 @@ import { join } from "node:path";
 import {
 	type SmokeStatusModel,
 	selectNonThinkingSmokeModel,
-} from "../src/smoke-model-selection.ts";
+} from "./smoke-model-selection.ts";
 
 const baseUrl = normalizeBaseUrl(
 	process.env.OMLX_BASE_URL ?? "http://127.0.0.1:8000/v1",

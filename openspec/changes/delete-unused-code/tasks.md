@@ -39,7 +39,7 @@ Every task is committed separately. A task that checks the shape of its diff mea
 
 ## 2. Structure: The Move And The Stale Import
 
-- [ ] 2.1 Move `src/smoke-model-selection.ts` to `scripts/smoke-model-selection.ts` and update the import at `scripts/smoke-live-omlx.ts:6`. Verify: `npm run check` green and `npm pack --dry-run` lists no `smoke-model-selection` path under `src/`.
+- [x] 2.1 Move `src/smoke-model-selection.ts` to `scripts/smoke-model-selection.ts` and update the import at `scripts/smoke-live-omlx.ts:6`. Verify: `npm run check` green and `npm pack --dry-run` lists no `smoke-model-selection` path under `src/`.
 
   - Red evidence: `npm pack --dry-run` before the move lists `src/smoke-model-selection.ts` among the shipped files, which is the state the task removes.
   - Green evidence: the same command's listing holds no `smoke-model-selection` path under `src/`, and the moved file still type-checks and lints because `tsconfig.json` and Biome cover `scripts/`.

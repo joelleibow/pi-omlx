@@ -58,7 +58,7 @@ entry point, and the isolation guard's thrown message is untouched.
 
 ## 3. The suite stops naming the read
 
-- [ ] 3.1 Structure step: remove the `vi.mock("node:fs")` block from
+- [x] 3.1 Structure step: remove the `vi.mock("node:fs")` block from
   `test/isolation/worker-setup.ts`, with the `vi` and `import type { PathLike }` imports it leaves
   unused (design D11). Keep the root injection and the guard exactly as they are. Verify:
   `rg -n 'node:fs' test/isolation/worker-setup.ts` returns no match; the guard still fires, shown by

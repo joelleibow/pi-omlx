@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { inject, test } from "vitest";
 import {
@@ -8,6 +8,7 @@ import {
 	parseModelsResponse,
 	parseModelsStatusResponse,
 	resolveArchContextLimits,
+	writeCatalogCache,
 } from "../src/catalog.ts";
 
 test("resolveArchContextLimits uses arch ceiling as prio-3 fallback", () => {
@@ -574,5 +575,44 @@ test("fetchModels times out", async () => {
 		);
 	} finally {
 		globalThis.fetch = originalFetch;
+	}
+});
+
+function readApiRoot(path: string): string {
+	return (JSON.parse(readFileSync(path, "utf-8")) as { apiRoot: string })
+		.apiRoot;
+}
+
+// catalog-discovery: a write after the agent directory changes lands under the
+// new directory. src/catalog.ts is loaded by test/isolation/worker-setup.ts
+// before any test runs, so the directory in force at load is the run's
+// <root>/agent and this test cannot choose it (michael-orientation trap (e)).
+// B is therefore set after the import, with no vi.resetModules().
+test("a cache write after the agent directory changes lands under the new directory", () => {
+	const apiRoot = "https://cache-path-test.invalid/v1";
+	const dirB = mkdtempSync(
+		join(inject("isolationRoot"), "pi-omlx-cache-write-"),
+	);
+	const savedAgentDir = process.env.PI_CODING_AGENT_DIR;
+	try {
+		process.env.PI_CODING_AGENT_DIR = dirB;
+		writeCatalogCache(apiRoot, [
+			{ id: "b-model", contextWindow: 8192, maxTokens: 1024 },
+		]);
+
+		assert.equal(readApiRoot(join(dirB, "cache", "omlx-models.json")), apiRoot);
+
+		// The /login test writes this file in a full run, so its content is the
+		// check, never its presence (council A4).
+		const loadTime = join(
+			inject("isolationRoot"),
+			"agent",
+			"cache",
+			"omlx-models.json",
+		);
+		if (existsSync(loadTime)) assert.notEqual(readApiRoot(loadTime), apiRoot);
+	} finally {
+		if (savedAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = savedAgentDir;
 	}
 });

@@ -20,7 +20,7 @@ entry point, and the isolation guard's thrown message is untouched.
 
 ## 1. The harness the proof needs
 
-- [ ] 1.1 Structure step: give `driveExtension` in `test/index.test.ts` one optional parameter, the
+- [x] 1.1 Structure step: give `driveExtension` in `test/index.test.ts` one optional parameter, the
   loader thunk, defaulting to `async () => extension`, and resolve it after the helper's `withEnv`
   call has prepared the environment (design D5). Leave every assertion in the file as it is. Verify:
   `npx vitest run test/index.test.ts` green with every existing call site unchanged, then

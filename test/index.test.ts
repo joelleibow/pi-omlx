@@ -214,10 +214,13 @@ interface DriveContext {
 	stderr: () => string[];
 }
 
+type EntryFunction = (pi: ExtensionAPI) => Promise<void>;
+
 async function driveExtension(
 	env: TestEnv,
 	body: (context: DriveContext) => Promise<void>,
 	respond: () => Response = () => jsonResponse(FIXTURE_MODELS),
+	loadEntry: () => Promise<EntryFunction> = async () => extension,
 ): Promise<void> {
 	const restoreEnv = withEnv({ ...env, PI_CODING_AGENT_DIR: dir });
 	const originalFetch = globalThis.fetch;
@@ -228,7 +231,10 @@ async function driveExtension(
 		.mockImplementation(() => true);
 	vi.useFakeTimers();
 	try {
-		await extension(fake.pi);
+		// Loaded after withEnv, so an entry module that sets the environment has
+		// its writes still visible to the body instead of being cleared first.
+		const entry = await loadEntry();
+		await entry(fake.pi);
 		await settle();
 		await body({
 			fetches,

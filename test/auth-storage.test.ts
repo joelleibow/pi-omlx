@@ -29,9 +29,10 @@ test("PROVIDER_KEY is omlx", () => {
 });
 
 // The read under PROVIDER_KEY returns the record unfiltered: the resolver, not
-// this function, decides what a present credential means. Each case points its
-// own PI_CODING_AGENT_DIR at this test's temp directory and writes the file the
-// production read resolves there.
+// this function, decides what a present credential means. Each case writes the
+// file the seam installed in beforeEach points at, and points its own
+// PI_CODING_AGENT_DIR at the same directory, so the record is the one the
+// production path resolves too.
 function storeUnderAgentDir(auth: Record<string, unknown>): void {
 	process.env.PI_CODING_AGENT_DIR = dir;
 	writeFileSync(join(dir, "auth.json"), JSON.stringify(auth, null, 2));

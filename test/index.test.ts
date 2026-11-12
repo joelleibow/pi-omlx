@@ -159,6 +159,7 @@ function recordCatalogFetches(): FetchCall[] {
 
 interface ProviderCall {
 	kind: "register" | "unregister";
+	provider: string;
 	config?: ProviderConfig;
 }
 
@@ -166,11 +167,11 @@ function fakePi() {
 	const calls: ProviderCall[] = [];
 	const handlers = new Map<string, () => void>();
 	const pi = {
-		registerProvider: (_provider: string, config: ProviderConfig) => {
-			calls.push({ kind: "register", config });
+		registerProvider: (provider: string, config: ProviderConfig) => {
+			calls.push({ kind: "register", provider, config });
 		},
-		unregisterProvider: () => {
-			calls.push({ kind: "unregister" });
+		unregisterProvider: (provider: string) => {
+			calls.push({ kind: "unregister", provider });
 		},
 		on: (event: string, handler: () => void) => {
 			handlers.set(event, handler);
@@ -362,6 +363,7 @@ test("a keyless registration unregisters the keyed one first", async () => {
 				during.map((call) => call.kind),
 				["unregister", "register"],
 			);
+			assert.equal(during[0]?.provider, PROVIDER_KEY);
 			assert.equal(lastRegistered()?.apiKey, undefined);
 			assert.equal(lastRegistered()?.authHeader, false);
 		},
@@ -378,6 +380,7 @@ test("a steady-state keyless poll unregisters first", async () => {
 			during.slice(-2).map((call) => call.kind),
 			["unregister", "register"],
 		);
+		assert.equal(during.at(-2)?.provider, PROVIDER_KEY);
 		assert.equal(lastRegistered()?.apiKey, undefined);
 	});
 });

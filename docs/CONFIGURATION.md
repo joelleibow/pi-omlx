@@ -10,14 +10,15 @@ The normal path is Pi's built-in login: run `/login omlx` (or `/login`, then **S
 
 ## Startup, the catalog cache, and the warning
 
-The extension registers a model list before Pi chooses the session's starting model, so Pi's startup never waits on the network. What it registers comes from the cache at `~/.pi/agent/cache/omlx-models.json`, keyed by the resolved base URL.
+The extension registers what it already has, the cached models or the login-only provider, before Pi chooses the session's starting model, so Pi's startup never waits on the network. The cached models it registers come from `~/.pi/agent/cache/omlx-models.json`, keyed by the resolved base URL.
 
 With no cache for that URL, the session starts on the login-only provider: no OMLX model is available yet, so a saved default OMLX model is not selected, and Pi starts on another provider's model or on none. The list arrives a moment later; choose an OMLX model with `/model`. A cache-less start covers a first run, and any `/login` to a new base URL, because the cache is keyed by the URL the credential resolves to.
 
 A successful catalog fetch writes the cache, and the next start uses it. With no cache, `pi --list-models` lists no OMLX models until a session has fetched and written them.
 
-The extension shows at most one warning per session. A failed load produces one of these, where `<url>` is the resolved base URL and `<n>` the number of cached models in use:
+The extension shows at most one warning per session. A failed load produces one of these, where `<url>` is the resolved base URL and `<n>` the number of cached models in use. For one cached model the text reads `model`, not `models`:
 
+- `oMLX model list unavailable at <url>; using 1 cached model.`
 - `oMLX model list unavailable at <url>; using <n> cached models.`
 - `oMLX model list unavailable at <url>; using the login-only provider.`
 

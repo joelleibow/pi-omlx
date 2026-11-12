@@ -82,7 +82,8 @@ It has no I/O and no state. Three named text builders produce the wording, and t
 
 | Text | When |
 |---|---|
-| `oMLX model list unavailable at <url>; using <n> cached models.` | `failed` with `cachedCount > 0` |
+| `oMLX model list unavailable at <url>; using 1 cached model.` | `failed` with `cachedCount === 1` |
+| `oMLX model list unavailable at <url>; using <n> cached models.` | `failed` with `cachedCount > 1` |
 | `oMLX model list unavailable at <url>; using the login-only provider.` | `failed` with `cachedCount === 0` |
 | `oMLX session started login-only; models from <url> are now available; choose one with /model.` | `registered` with `startedLoginOnly` |
 | `undefined` | `not_configured`, or `registered` without `startedLoginOnly` |

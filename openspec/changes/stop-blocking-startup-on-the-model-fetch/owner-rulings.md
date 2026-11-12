@@ -33,3 +33,9 @@ Decided: startup never waits on the model fetch, cached or not. The no-cache beh
 Asked "Should the extension tell you when the model list can't be fetched, or arrives after startup?", Joel chose "One notice when it matters (Recommended)", described as: "Show one warning per session when the list fails or arrives late, naming the URL and whether cached models or login-only are in use. Without it, you can end up on another provider's model with nothing saying why. Michael's lean."
 
 Decided: the extension shows one warning per session when the catalog fetch fails or the catalog arrives after startup, naming the URL and whether cached models or the login-only provider are in use.
+
+## 2026-11-11 — When the notice fires
+
+Asked "Startup never waits now, so even with a warm cache the live list always "arrives after startup". When should the one warning fire?", Joel chose "Failures, plus late only if no cache (Recommended)", described as: "You get a warning whenever the model list fails to load, saying whether cached models or login-only are in use. A list that arrives late only warns if the session started login-only, which is when you might be sitting on another provider's model. With a warm cache there's no warning."
+
+Decided: the one warning per session fires on a failed catalog fetch, naming whether cached models or the login-only provider are in use, and on a catalog that arrives after startup only when the session started with the login-only provider. A warm-cache session whose catalog arrives normally gets no warning.

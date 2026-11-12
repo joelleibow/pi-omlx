@@ -26,8 +26,9 @@ export type RegisterOmlxFromLogin = (
  * Drives pi's native "Use a subscription" /login flow for omlx: prompts for
  * base URL then API key via the two onPrompt calls the login dialog exposes.
  * Stored as an oauth-typed credential (access/refresh/expires are required by
- * OAuthCredentials but unused — omlx has no token refresh); auth-storage.ts
- * reads baseUrl/access back out via loadOmlxCredential().
+ * OAuthCredentials but unused — omlx has no token refresh); auth-storage.ts's
+ * readOmlxCredential() hands baseUrl/access to the resolver, which decides the
+ * provider's URL and key.
  */
 export function createLoginOmlx(register: RegisterOmlxFromLogin) {
 	return async function loginOmlx(

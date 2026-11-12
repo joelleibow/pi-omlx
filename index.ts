@@ -151,6 +151,10 @@ function registerModels(
 	modelSettingsPath?: string,
 ): void {
 	const keyless = credential.apiKey === "";
+	// registerProvider merges defined values, so a keyless registration would
+	// inherit the previous apiKey. The trigger is the shape, not remembered
+	// keyed-ness: pi stays keyless until it is told otherwise.
+	if (keyless) pi.unregisterProvider(PROVIDER);
 	pi.registerProvider(PROVIDER, {
 		name: "OMLX",
 		oauth: buildOmlxOauth(pi, state),

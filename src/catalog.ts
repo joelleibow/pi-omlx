@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 
 export interface OmlxModel {
@@ -564,7 +564,12 @@ function applyModelSettingsEntry(
 	return next;
 }
 
-const CACHE_FILE = join(getAgentDir(), "cache", "omlx-models.json");
+// Derived per call, not captured at import: pi resolves the agent directory on
+// every call, and a path captured at load can point at a directory the process
+// has left (catalog-discovery).
+function catalogCachePath(): string {
+	return join(getAgentDir(), "cache", "omlx-models.json");
+}
 
 interface CachedCatalog {
 	apiRoot: string;
@@ -584,7 +589,7 @@ export function readLastCatalogCache(): OmlxModel[] | undefined {
 
 function readCatalogCacheFile(): CachedCatalog | undefined {
 	try {
-		const raw = readFileSync(CACHE_FILE, "utf-8");
+		const raw = readFileSync(catalogCachePath(), "utf-8");
 		const data = JSON.parse(raw) as CachedCatalog;
 		if (!Array.isArray(data.models)) return undefined;
 		return data;
@@ -595,9 +600,10 @@ function readCatalogCacheFile(): CachedCatalog | undefined {
 
 export function writeCatalogCache(apiRoot: string, models: OmlxModel[]): void {
 	try {
-		mkdirSync(join(getAgentDir(), "cache"), { recursive: true });
+		const file = catalogCachePath();
+		mkdirSync(dirname(file), { recursive: true });
 		const data: CachedCatalog = { apiRoot, models, savedAt: Date.now() };
-		writeFileSync(CACHE_FILE, JSON.stringify(data, null, 2));
+		writeFileSync(file, JSON.stringify(data, null, 2));
 	} catch {
 		// Ignore write errors — cache is best-effort
 	}

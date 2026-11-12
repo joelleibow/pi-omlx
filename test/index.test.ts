@@ -4,20 +4,18 @@ import {
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
-	rmSync,
 	symlinkSync,
 	writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type {
 	ExtensionAPI,
 	ProviderConfig,
 } from "@earendil-works/pi-coding-agent";
-import { afterEach, beforeEach, inject, test, vi } from "vitest";
-import extension, { EXTENSION_SINGLETON_KEY } from "../index.ts";
-import { _setAuthPathForTesting, PROVIDER_KEY } from "../src/auth-storage.ts";
+import { beforeEach, inject, test, vi } from "vitest";
+import extension from "../index.ts";
+import { PROVIDER_KEY } from "../src/auth-storage.ts";
 import type { OmlxModel } from "../src/catalog.ts";
 
 function callbacksReturning(...values: string[]) {
@@ -43,15 +41,7 @@ function jsonResponse(body: unknown): Response {
 let dir: string;
 
 beforeEach(() => {
-	dir = mkdtempSync(join(tmpdir(), "pi-omlx-index-"));
-	_setAuthPathForTesting(join(dir, "auth.json"));
-	delete (globalThis as Record<PropertyKey, unknown>)[EXTENSION_SINGLETON_KEY];
-});
-
-afterEach(() => {
-	_setAuthPathForTesting(undefined);
-	rmSync(dir, { recursive: true, force: true });
-	delete (globalThis as Record<PropertyKey, unknown>)[EXTENSION_SINGLETON_KEY];
+	dir = mkdtempSync(join(inject("isolationRoot"), "pi-omlx-index-"));
 });
 
 test("/login with an API key registers authenticated OMLX models", async () => {
@@ -111,9 +101,9 @@ test("/login with an API key registers authenticated OMLX models", async () => {
 import { DEFAULT_OMLX_BASE_URL } from "../src/config.ts";
 
 // The wiring tests take the credential route this change asks for: a stored
-// `auth.json` under the test's own PI_CODING_AGENT_DIR. `dir` is the temp
-// directory the file-level hook points the read at, so the same file is the
-// one the production read resolves when it asks pi for the agent directory.
+// `auth.json` under the test's own PI_CODING_AGENT_DIR. `dir` is that
+// directory, which `driveExtension` points pi's agent directory at, so the
+// same file is the one the production read resolves.
 const FIXTURE_BASE_URL = "https://omlx.home.g33k.top";
 const FIXTURE_API_ROOT = `${FIXTURE_BASE_URL}/v1`;
 const OTHER_API_ROOT = "http://10.0.0.5:8000/v1";
@@ -247,13 +237,11 @@ interface CacheFixture {
 	savedAt: number;
 }
 
-// CACHE_FILE is captured at import (src/catalog.ts:567), so the file the
-// extension reads and writes is the isolation root's, whatever
-// PI_CODING_AGENT_DIR points at while a test runs. The production write mkdirs
-// the agent directory it resolves at call time, which is not this one, so a
-// test that expects that write to land creates this directory itself.
+// The cache file under the test's own agent directory: `dir` is what
+// driveExtension points PI_CODING_AGENT_DIR at, and the extension derives the
+// cache path from it at each read and each write.
 function cacheFixturePath(): string {
-	return join(inject("isolationRoot"), "agent", "cache", "omlx-models.json");
+	return join(dir, "cache", "omlx-models.json");
 }
 
 function writeCacheFixture(apiRoot: string, models: OmlxModel[]): void {
@@ -271,12 +259,6 @@ function readCacheFixture(): CacheFixture | undefined {
 	} catch {
 		return undefined;
 	}
-}
-
-function removeCacheFixture(): void {
-	const path = cacheFixturePath();
-	mkdirSync(dirname(path), { recursive: true });
-	rmSync(path, { force: true });
 }
 
 // A cached model with real limits, under whatever id a test needs: the ids
@@ -633,7 +615,6 @@ test("a request that never answers does not delay a session with cached models",
 
 test("a request that never answers does not delay a session with no cache", async () => {
 	storeCredential(storedOAuth(STORED_KEY));
-	removeCacheFixture();
 	await driveExtension(
 		{},
 		async ({ fetches, lastRegistered }) => {
@@ -654,7 +635,6 @@ function neverAnswered(): Promise<Response> {
 // choice of starting model is left alone.
 test("a late catalog registers under omlx and moves no model", async () => {
 	storeCredential(storedOAuth(STORED_KEY));
-	removeCacheFixture();
 	await driveExtension({}, async ({ calls, setModels }) => {
 		assert.deepEqual(setModels, []);
 		const registrations = calls.filter((call) => call.kind === "register");
@@ -689,7 +669,6 @@ test("a cached start registers under omlx without choosing a model", async () =>
 // satisfy the assertion.
 test("a successful request registers the fetched models and writes the cache", async () => {
 	storeCredential(storedOAuth(STORED_KEY));
-	removeCacheFixture();
 	await driveExtension(
 		{},
 		async ({ fetches, lastRegistered }) => {
@@ -744,7 +723,6 @@ test("a failed load with cached models warns once with the URL and the count", a
 
 test("a failed load with no cache warns once naming the login-only provider", async () => {
 	storeCredential(storedOAuth(STORED_KEY));
-	removeCacheFixture();
 	await driveExtension(
 		{},
 		async ({ notifies, startSession }) => {
@@ -762,7 +740,6 @@ test("a failed load with no cache warns once naming the login-only provider", as
 
 test("a 200 with nothing registrable warns once and writes no cache", async () => {
 	storeCredential(storedOAuth(STORED_KEY));
-	removeCacheFixture();
 	await driveExtension(
 		{},
 		async ({ fetches, notifies, startSession }) => {
@@ -818,7 +795,6 @@ test("a later success adds no second warning", async () => {
 // because RPC emits session_start twice on one instance, yet it is told once.
 test("a login-only session warns once, however often it starts or fails again", async () => {
 	storeCredential(storedOAuth(STORED_KEY));
-	removeCacheFixture();
 	await driveExtension(
 		{},
 		async ({ notifies, startSession }) => {
@@ -838,7 +814,6 @@ test("a login-only session warns once, however often it starts or fails again", 
 // about models that arrived afterwards.
 test("a late catalog warns once for a session that started login-only", async () => {
 	storeCredential(storedOAuth(STORED_KEY));
-	removeCacheFixture();
 	await driveExtension({}, async ({ notifies, startSession }) => {
 		startSession();
 		assert.deepEqual(notifies, [
@@ -860,7 +835,6 @@ test("a warm cache whose catalog arrives normally warns about nothing", async ()
 });
 
 test("an unconfigured start that later logs in warns about nothing", async () => {
-	removeCacheFixture();
 	await driveExtension(
 		{},
 		async ({ lastRegistered, notifies, startSession }) => {
@@ -883,7 +857,6 @@ test("an unconfigured start that later logs in warns about nothing", async () =>
 // stderr stays empty.
 test("the notice decision traces under PI_OMLX_DEBUG and is silent without it", async () => {
 	storeCredential(storedOAuth(STORED_KEY));
-	removeCacheFixture();
 	await driveExtension(
 		{ PI_OMLX_DEBUG: "1" },
 		async ({ stderr, startSession }) => {
@@ -915,7 +888,6 @@ test("the notice decision traces under PI_OMLX_DEBUG and is silent without it", 
 		catalogRefusedResponse,
 	);
 
-	removeCacheFixture();
 	await driveExtension(
 		{},
 		async ({ stderr, startSession }) => {
@@ -931,7 +903,6 @@ test("the notice decision traces under PI_OMLX_DEBUG and is silent without it", 
 // nothing beyond what the diagnostics spec allows.
 test("a print-mode session with no UI records the warning and writes no stderr", async () => {
 	storeCredential(storedOAuth(STORED_KEY));
-	removeCacheFixture();
 	await driveExtension(
 		{},
 		async ({ notifies, startSession, stderr }) => {
@@ -945,7 +916,6 @@ test("a print-mode session with no UI records the warning and writes no stderr",
 
 test("a json-mode session with no UI records the warning and writes no stderr", async () => {
 	storeCredential(storedOAuth(STORED_KEY));
-	removeCacheFixture();
 	await driveExtension(
 		{},
 		async ({ notifies, startSession, stderr }) => {
@@ -1019,7 +989,6 @@ function heldResponse(): {
 
 test("a fetch that resolves after shutdown registers nothing and warns nobody", async () => {
 	storeCredential(storedOAuth(STORED_KEY));
-	removeCacheFixture();
 	const held = heldResponse();
 	await driveExtension(
 		{},

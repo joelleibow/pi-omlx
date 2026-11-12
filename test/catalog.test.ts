@@ -1,14 +1,21 @@
 import { strict as assert } from "node:assert";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
-import { test } from "vitest";
+import { inject, test } from "vitest";
 import {
 	applyLocalModelSettings,
 	fetchModels,
 	parseModelsResponse,
 	parseModelsStatusResponse,
+	readCatalogCache,
 	resolveArchContextLimits,
+	writeCatalogCache,
 } from "../src/catalog.ts";
 
 test("resolveArchContextLimits uses arch ceiling as prio-3 fallback", () => {
@@ -230,7 +237,7 @@ test("fetchModels omits the Authorization header for keyless servers", async () 
 });
 
 test("fetchModels applies local OMLX model settings for localhost metadata refinement", async () => {
-	const dir = mkdtempSync(join(tmpdir(), "pi-omlx-"));
+	const dir = mkdtempSync(join(inject("isolationRoot"), "pi-omlx-"));
 	const settingsPath = join(dir, "model_settings.json");
 	writeFileSync(
 		settingsPath,
@@ -308,7 +315,7 @@ test("fetchModels applies local OMLX model settings for localhost metadata refin
 });
 
 test("applyLocalModelSettings projects full model_settings entry into bridge metadata", () => {
-	const dir = mkdtempSync(join(tmpdir(), "pi-omlx-"));
+	const dir = mkdtempSync(join(inject("isolationRoot"), "pi-omlx-"));
 	const settingsPath = join(dir, "model_settings.json");
 	writeFileSync(
 		settingsPath,
@@ -464,7 +471,7 @@ test("applyLocalModelSettings projects full model_settings entry into bridge met
 });
 
 test("fetchModels emits catalog debug events for local settings refinement", async () => {
-	const dir = mkdtempSync(join(tmpdir(), "pi-omlx-"));
+	const dir = mkdtempSync(join(inject("isolationRoot"), "pi-omlx-"));
 	const settingsPath = join(dir, "model_settings.json");
 	writeFileSync(
 		settingsPath,
@@ -512,7 +519,7 @@ test("applyLocalModelSettings honors explicit missing path without changing meta
 	const models = applyLocalModelSettings(
 		[{ id: "documenter", thinkingDefault: true }],
 		"https://example.test/v1",
-		join(tmpdir(), "pi-omlx-missing-model-settings.json"),
+		join(inject("isolationRoot"), "pi-omlx-missing-model-settings.json"),
 	);
 	assert.deepEqual(models, [{ id: "documenter", thinkingDefault: true }]);
 });
@@ -575,5 +582,80 @@ test("fetchModels times out", async () => {
 		);
 	} finally {
 		globalThis.fetch = originalFetch;
+	}
+});
+
+function readApiRoot(path: string): string {
+	return (JSON.parse(readFileSync(path, "utf-8")) as { apiRoot: string })
+		.apiRoot;
+}
+
+// catalog-discovery: a write after the agent directory changes lands under the
+// new directory. src/catalog.ts is loaded by test/isolation/worker-setup.ts
+// before any test runs, so the directory in force at load is the run's
+// <root>/agent and this test cannot choose it (michael-orientation trap (e)).
+// B is therefore set after the import, with no vi.resetModules().
+test("a cache write after the agent directory changes lands under the new directory", () => {
+	const apiRoot = "https://cache-path-test.invalid/v1";
+	const dirB = mkdtempSync(
+		join(inject("isolationRoot"), "pi-omlx-cache-write-"),
+	);
+	const savedAgentDir = process.env.PI_CODING_AGENT_DIR;
+	try {
+		process.env.PI_CODING_AGENT_DIR = dirB;
+		writeCatalogCache(apiRoot, [
+			{ id: "b-model", contextWindow: 8192, maxTokens: 1024 },
+		]);
+
+		assert.equal(readApiRoot(join(dirB, "cache", "omlx-models.json")), apiRoot);
+
+		// The /login test writes this file in a full run, so its content is the
+		// check, never its presence (council A4).
+		const loadTime = join(
+			inject("isolationRoot"),
+			"agent",
+			"cache",
+			"omlx-models.json",
+		);
+		if (existsSync(loadTime)) assert.notEqual(readApiRoot(loadTime), apiRoot);
+	} finally {
+		if (savedAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = savedAgentDir;
+	}
+});
+
+// catalog-discovery: a read follows the agent directory in force when it runs.
+// B holds a cache and C holds none, so a read that reports B's models under B
+// and nothing under C can only be following the directory in force. The test
+// seeds nothing under <root>/agent, which the /login test writes (council S2).
+test("a cache read follows the agent directory in force when it runs", () => {
+	const apiRoot = "https://cache-read-path-test.invalid/v1";
+	const dirB = mkdtempSync(
+		join(inject("isolationRoot"), "pi-omlx-cache-read-b-"),
+	);
+	const dirC = mkdtempSync(
+		join(inject("isolationRoot"), "pi-omlx-cache-read-c-"),
+	);
+	mkdirSync(join(dirB, "cache"), { recursive: true });
+	writeFileSync(
+		join(dirB, "cache", "omlx-models.json"),
+		JSON.stringify({
+			apiRoot,
+			models: [{ id: "b-model", contextWindow: 8192, maxTokens: 1024 }],
+			savedAt: Date.now(),
+		}),
+	);
+	const savedAgentDir = process.env.PI_CODING_AGENT_DIR;
+	try {
+		process.env.PI_CODING_AGENT_DIR = dirB;
+		assert.deepEqual(
+			readCatalogCache(apiRoot)?.map((model) => model.id),
+			["b-model"],
+		);
+		process.env.PI_CODING_AGENT_DIR = dirC;
+		assert.equal(readCatalogCache(apiRoot), undefined);
+	} finally {
+		if (savedAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = savedAgentDir;
 	}
 });

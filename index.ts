@@ -28,7 +28,7 @@ import { toProviderConfig } from "./src/provider.ts";
 import { applyOmlxThinkingControls } from "./src/thinking.ts";
 
 const PROVIDER = PROVIDER_KEY;
-export const EXTENSION_SINGLETON_KEY = Symbol.for("pi-omlx/loaded");
+const EXTENSION_SINGLETON_KEY = Symbol.for("pi-omlx/loaded");
 
 const CATALOG_TIMEOUT_MS = 2_000;
 const POLL_INTERVAL_MS = 10 * 60 * 1000;

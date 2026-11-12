@@ -14,16 +14,9 @@ export interface OmlxCredentialRecord {
 	access?: string;
 }
 
-let authPathOverrideForTesting: string | undefined;
-
-export function _setAuthPathForTesting(path: string | undefined): void {
-	authPathOverrideForTesting = path;
-}
-
 export function readOmlxCredential(): OmlxCredentialRecord | undefined {
-	// Defaults to <agent dir>/auth.json, resolved per call (research-chidi §3:
+	// <agent dir>/auth.json, resolved per call (research-chidi §3:
 	// auth-storage.js:425-433; getAgentDir reads PI_CODING_AGENT_DIR per call,
-	// michael-orientation trap i: config.js:510-516). The path argument is the
-	// existing test seam, honoured only when a test sets one.
-	return readStoredCredential(PROVIDER_KEY, authPathOverrideForTesting);
+	// michael-orientation trap i: config.js:510-516).
+	return readStoredCredential(PROVIDER_KEY);
 }

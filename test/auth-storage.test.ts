@@ -10,13 +10,17 @@ import {
 } from "../src/auth-storage.ts";
 
 let dir: string;
+let savedAgentDir: string | undefined;
 
 beforeEach(() => {
 	dir = mkdtempSync(join(tmpdir(), "pi-omlx-auth-"));
+	savedAgentDir = process.env.PI_CODING_AGENT_DIR;
 	_setAuthPathForTesting(join(dir, "auth.json"));
 });
 afterEach(() => {
 	_setAuthPathForTesting(undefined);
+	if (savedAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+	else process.env.PI_CODING_AGENT_DIR = savedAgentDir;
 	rmSync(dir, { recursive: true, force: true });
 });
 
@@ -32,10 +36,6 @@ function storeUnderAgentDir(auth: Record<string, unknown>): void {
 	process.env.PI_CODING_AGENT_DIR = dir;
 	writeFileSync(join(dir, "auth.json"), JSON.stringify(auth, null, 2));
 }
-
-afterEach(() => {
-	delete process.env.PI_CODING_AGENT_DIR;
-});
 
 test("readOmlxCredential returns a stored api_key record with an empty key", () => {
 	storeUnderAgentDir({ [PROVIDER_KEY]: { type: "api_key", key: "" } });

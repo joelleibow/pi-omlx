@@ -24,6 +24,20 @@ Run via [`mise`](https://mise.jdx.dev/):
 - `mise run debug:pi` — Pi home, config, session, log, and cache diagnostics. Pass `install`, `config`, `sessions`, `logs`, or `cache` after `--`.
 - `mise run debug:pi -- timeline <session-id|session-file|iso-time>` — OMLX server events and changed files around a stuck turn. You pass the anchor: a session id, a session file, or an ISO timestamp, with no default. Use `--minutes=N` to set how far past the anchor the window runs (default 3).
 
+### Environment for the scripts
+
+The scripts read their configuration from `process.env` alone: they never consult Pi's saved login, and no file in the clone supplies them. [`direnv`](https://github.com/direnv/direnv) can supply it from an untracked `.envrc` in the clone, so you need not export it by hand each time:
+
+```sh
+export OMLX_BASE_URL="http://127.0.0.1:8000/v1"
+export OMLX_API_KEY="omlx-..."
+# Optional overrides for the live smoke probe.
+export OMLX_REASONING_MODEL="<a model your server lists>"
+export OMLX_NON_THINKING_MODEL="<a model your server lists>"
+```
+
+The two model names are optional: with either unset, the smoke probe picks a reasoning model and a non-thinking one from the server's own model list, and it stops with instructions only when neither the variable nor the server supplies one. `debug:omlx` reads the base URL and the key, and `debug:pi` uses none of the four. With neither the URL nor the key exported, smoke falls back to `http://127.0.0.1:8000/v1` and the key `local-smoke`. Then run `direnv allow`, which direnv asks for once and again after every change to the file. `.gitignore` keeps `.envrc` out of git, so the key stays on your machine. For the extension's own configuration, see [docs/CONFIGURATION.md](./docs/CONFIGURATION.md).
+
 ## Triage order
 
 1. Reproduce the stuck turn with `PI_OMLX_DEBUG` set to any non-empty value, `0` included: the extension writes `[pi-omlx] <event> {json}` lines to stderr in the terminal that started Pi, and keeps no log file. A stuck turn shows as a trace that stops after `before_provider_request`. The events are `model_select`, `before_provider_request`, `provider_registered`, `stream_error_normalized`, `stream_simple_entered`, `stream_simple_bypassed` and `stream_throw_normalized`. The latest `mise run smoke:omlx` proof lives in `log/smoke-test/<iso-timestamp>.json`.

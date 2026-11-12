@@ -78,10 +78,12 @@ entry point, and the isolation guard's thrown message is untouched.
 - [x] 4.1 Structure step: delete `.env.example`, whose instruction to copy it to a `.env` describes a
   read this change removed (design D1, and the card's second acceptance criterion for the file
   half). Verify: `test ! -e .env.example` exits 0; `git grep -nE '"\.env"|/\.env|^\.env' --
-  ':!*.md' ':!openspec/'` returns exactly three lines, `.gitignore:2` and `.npmignore:31` which
-  design D9 keeps by decision, plus the one fixture line in `test/index.test.ts` that writes the
-  copy's `.env` under the repository's double quotes. That pattern matches a `.env` filename, where a
-  bare `\.env` would match every `process.env` read. `npm run check` green.
+  ':!*.md' ':!openspec/'` returns exactly three lines, `.gitignore:2`, `.npmignore:31` (which design
+  D9 keeps by decision) and `test/index.test.ts:478`, the fixture line that writes the copy's `.env`
+  under the repository's double quotes. Three is the count before 4.2 adds its line: run the same
+  search afterwards and `.gitignore:3`, the `.envrc` entry matched by the `^\.env` alternative,
+  makes four. That pattern matches a `.env` filename, where a bare `\.env` would match every
+  `process.env` read. `npm run check` green.
 
 - [x] 4.2 Structure step: add `.envrc` to `.gitignore`, on the line after its `.env` entry, as the
   guard for the direnv guidance the docs pass will add (design D8, the half that is not Markdown).
@@ -104,18 +106,32 @@ entry point, and the isolation guard's thrown message is untouched.
   `test-isolation` "The operator's overlay does not decide the run" and "A caller's exported overlay
   path does not decide the run", after the mock and its imports are gone.
 
-- [ ] 5.2 Verify the change's shape and the searches the implementation gate will run.
-  `git diff --stat` and `git status --short` show `src/dotenv.ts`, `test/dotenv.test.ts` and
-  `.env.example` as deletions and `index.ts`, `test/index.test.ts`,
+- [x] 5.2 Verify the change's shape and the searches the implementation gate will run.
+  `git diff --stat a43b5c6..HEAD` and `git status --short` show `src/dotenv.ts`, `test/dotenv.test.ts`
+  and `.env.example` as deletions and `index.ts`, `test/index.test.ts`,
   `test/isolation/worker-setup.ts`, `test/isolation/global-setup.ts` and `.gitignore` as the only
   edits, with nothing else beyond this change's own Markdown under
   `openspec/changes/stop-loading-a-dotenv/` and the git-excluded `.pi/`; `rg -c 'shortcut:'
   test/index.test.ts` reports 1; `git grep -nE 'dotenv|loadEnvFile|env-file' -- ':!*.md'
-  ':!openspec/'` returns no match; `git grep -nE '"\.env"|/\.env|^\.env' -- ':!*.md'
-  ':!openspec/'` returns exactly `.gitignore:2`, `.npmignore:31`, and the one fixture line in
-  `test/index.test.ts` that writes the copy's `.env`; and the suppression search
+  ':!openspec/'` returns exactly one line, `test/index.test.ts:479`, which is D6's approved fixture
+  values (`from-dotenv.invalid`, `from-dotenv`) and not a reader; `git grep -nE '"\.env"|/\.env|^\.env'
+  -- ':!*.md' ':!openspec/'` returns exactly four lines, `.gitignore:2`, `.gitignore:3` (4.2's
+  `.envrc` entry, matched by the `^\.env` alternative), `.npmignore:31` and
+  `test/index.test.ts:478`; and the suppression search
   `git grep -nE '@ts-ignore|@ts-expect-error|@ts-nocheck|biome-ignore' -- ':!*.md'` returns no
   match. Show the filename search biting: add a temporary line
   `readFileSync(join(dir, ".env"), "utf8")` to a file under `src/`, see the search return that file
-  and line beside the three above, and delete it. Record each command and each result, including the
+  and line beside the four above, and delete it. Record each command and each result, including the
   temporary file's removal.
+  - Evidence, from Derek's recorded runs. `git grep -nE 'dotenv|loadEnvFile|env-file' -- ':!*.md'
+    ':!openspec/'` → exit 0, one match,
+    `test/index.test.ts:479: "OMLX_BASE_URL=http://from-dotenv.invalid/v1\nOMLX_API_KEY=from-dotenv\n",`.
+    `git grep -nE '"\.env"|/\.env|^\.env' -- ':!*.md' ':!openspec/'` → exit 0, four lines:
+    `.gitignore:2:.env`, `.gitignore:3:.envrc`, `.npmignore:31:.env*`,
+    `test/index.test.ts:478: join(copyDir, ".env"),`. `git diff --stat a43b5c6..HEAD` → the three
+    deletions, the five edits and `tasks.md`; `git status --short` → ` M proposal.md` and `?? .pi/`.
+    `rg -c 'shortcut:' test/index.test.ts` → `1`. Suppression search over the diff base → exit 1, no
+    match. Bite: a temporary `readFileSync(join(dir, ".env"), "utf8")` line in `src/debug.ts` made
+    the filename search report `src/debug.ts:30:const probe = readFileSync(join(dir, ".env"),
+    "utf8");` beside the four; file restored, `git status --short src/debug.ts` empty. `npm run
+    check` → exit 0, 94 tests.

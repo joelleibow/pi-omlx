@@ -97,8 +97,8 @@ were read for what must not change and are not modified by this change.
 - **Code edited:** `index.ts` (the import and the startup call, with the import grouping Biome
   reorders afterwards), `test/isolation/worker-setup.ts` (the `vi.mock` block, plus the `vi` and
   `PathLike` imports it leaves unused), `test/isolation/global-setup.ts` (one comment),
-  `test/index.test.ts` (the new test and the entry-function parameter on its extension driver),
-  `.gitignore` (one line).
+  `test/index.test.ts` (the new test, and the loader thunk its extension driver resolves after
+  `withEnv`, design D5), `.gitignore` (one line).
 - **Specs:** the new `environment-configuration` capability, and a delta to `test-isolation`.
 - **Users:** the breaking case above, bounded by `credential-resolution`. One semantic shift is
   worth naming: the `.env` reached every pi session that loads the clone, while direnv reaches only

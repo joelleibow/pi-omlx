@@ -665,3 +665,39 @@ test("a cached start registers under omlx without choosing a model", async () =>
 		);
 	});
 });
+
+// Requirement 1, third scenario. The response's model id appears in no other
+// test, and the cache file is removed first, so only this run's own write can
+// satisfy the assertion.
+test("a successful request registers the fetched models and writes the cache", async () => {
+	storeCredential(storedOAuth(STORED_KEY));
+	removeCacheFixture();
+	await driveExtension(
+		{},
+		async ({ fetches, lastRegistered }) => {
+			assert.equal(fetches.length, 1);
+			assert.deepEqual(
+				lastRegistered()?.models?.map((model) => model.id),
+				["cache-write-model"],
+			);
+			const cache = readCacheFixture();
+			assert.equal(cache?.apiRoot, FIXTURE_API_ROOT);
+			assert.deepEqual(
+				cache?.models?.map((model) => model.id),
+				["cache-write-model"],
+			);
+			assert.equal(cache?.models?.[0]?.contextWindow, 65536);
+			assert.equal(cache?.models?.[0]?.maxTokens, 8192);
+		},
+		() =>
+			jsonResponse({
+				models: [
+					{
+						id: "cache-write-model",
+						max_context_window: 65536,
+						max_tokens: 8192,
+					},
+				],
+			}),
+	);
+});

@@ -85,7 +85,7 @@ Every task is committed separately. A task that checks the shape of its diff mea
 
 ## 4. Output: The Trace And The Cache File
 
-- [ ] 4.1 Replace the field-by-field change comparison in `applyLocalModelSettings` with `JSON.stringify(next) !== JSON.stringify(model)` and drop the `entrySummary` detail from the `catalog_local_model_settings_applied` payload. Leave `summarizeModelSettingsEntry` and `compactObject` in place: `next.settingsSummary = summarizeModelSettingsEntry(entry)` still calls the helper. Verify: `npm run check` green.
+- [x] 4.1 Replace the field-by-field change comparison in `applyLocalModelSettings` with `JSON.stringify(next) !== JSON.stringify(model)` and drop the `entrySummary` detail from the `catalog_local_model_settings_applied` payload. Leave `summarizeModelSettingsEntry` and `compactObject` in place: `next.settingsSummary = summarizeModelSettingsEntry(entry)` still calls the helper. Verify: `npm run check` green.
 
   - Red evidence: `rg -n 'entrySummary' index.ts src test scripts` returns one hit, the payload construction at `src/catalog.ts:483`; that is the reader this task removes. The comparison swap itself changes nothing observable, which Michael measured.
   - Green evidence: the search returns no match; the pinned kind-sequence test in `test/catalog.test.ts`, which asserts `catalog_status_loaded`, then `catalog_local_settings_considered`, then `catalog_local_model_settings_applied`, stays green; the compiler clean.

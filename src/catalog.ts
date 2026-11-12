@@ -446,33 +446,7 @@ export function applyLocalModelSettings(
 			model,
 			entry as Record<string, unknown>,
 		);
-		if (
-			next.thinkingDefault !== model.thinkingDefault ||
-			next.contextWindow !== model.contextWindow ||
-			next.maxTokens !== model.maxTokens ||
-			next.displayName !== model.displayName ||
-			next.description !== model.description ||
-			next.modelAlias !== model.modelAlias ||
-			next.taskBudgetTokens !== model.taskBudgetTokens ||
-			next.maxToolResultTokens !== model.maxToolResultTokens ||
-			next.thinkingBudgetTokens !== model.thinkingBudgetTokens ||
-			next.thinkingBudgetEnabled !== model.thinkingBudgetEnabled ||
-			next.preserveThinking !== model.preserveThinking ||
-			JSON.stringify(next.chatTemplateKwargs) !==
-				JSON.stringify(model.chatTemplateKwargs) ||
-			JSON.stringify(next.forcedCtKwargs) !==
-				JSON.stringify(model.forcedCtKwargs) ||
-			next.isDefault !== model.isDefault ||
-			next.isPinned !== model.isPinned ||
-			next.trustRemoteCode !== model.trustRemoteCode ||
-			next.ttlSeconds !== model.ttlSeconds ||
-			next.indexCacheFreq !== model.indexCacheFreq ||
-			next.reasoningParser !== model.reasoningParser ||
-			next.activeProfileName !== model.activeProfileName ||
-			next.modelType !== model.modelType ||
-			JSON.stringify(next.settingsSummary) !==
-				JSON.stringify(model.settingsSummary)
-		) {
+		if (JSON.stringify(next) !== JSON.stringify(model)) {
 			onDebug?.({
 				kind: "catalog_local_model_settings_applied",
 				details: {
@@ -480,9 +454,6 @@ export function applyLocalModelSettings(
 					modelId: model.id,
 					before: model,
 					after: next,
-					entrySummary: summarizeModelSettingsEntry(
-						entry as Record<string, unknown>,
-					),
 				},
 			});
 		}

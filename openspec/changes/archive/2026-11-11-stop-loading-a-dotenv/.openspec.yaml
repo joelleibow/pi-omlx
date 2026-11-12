@@ -1,0 +1,18 @@
+schema: marbleization
+created: 2026-11-11
+x-marbleization:
+  working_dir_state: existing_project
+  runs:
+    chidi: "e7cf2098-a420-43b8-8318-71b1907d1e92"
+    eleanor: "29c18655-527a-41ba-b1d4-6599c9369eb7"
+    michael: "38c8bc17-ebcd-46b4-ae0a-66495ebf3422"
+    bambadjan: "39ddf0a1-099e-41df-bba4-751142416486"
+    neil: "43f63dd5-3e82-41fb-bda1-4cae2920beec"
+    derek: "d9c479c4-4d55-46e6-b4c5-9ad6721df1dc"
+    matt: "153016be-6ae0-4bfe-8c6c-9a43977717f2"
+  gates:
+    council_owner: approved
+    design: approved
+    tasks: approved
+    implement: approved
+    validate: approved

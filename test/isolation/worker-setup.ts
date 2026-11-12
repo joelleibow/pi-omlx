@@ -1,23 +1,8 @@
-import type { PathLike } from "node:fs";
 import { homedir } from "node:os";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { inject, vi } from "vitest";
+import { inject } from "vitest";
 import { resolveLocalModelSettingsPath } from "../../src/catalog.ts";
 import { escapedPaths } from "./guard.ts";
-
-vi.mock("node:fs", async (importOriginal) => {
-	const original = await importOriginal<typeof import("node:fs")>();
-	// The factory can run while this file's own imports are still initializing,
-	// so it imports what it needs itself.
-	const [{ fileURLToPath }, { resolve }] = await Promise.all([
-		import("node:url"),
-		import("node:path"),
-	]);
-	const repoDotenv = fileURLToPath(new URL("../../.env", import.meta.url));
-	const existsSync = (path: PathLike): boolean =>
-		resolve(String(path)) === repoDotenv ? false : original.existsSync(path);
-	return { ...original, existsSync, default: { ...original, existsSync } };
-});
 
 const root = inject("isolationRoot");
 if (!root) {

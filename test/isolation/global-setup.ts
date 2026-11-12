@@ -10,7 +10,7 @@ declare module "vitest" {
 }
 
 // Every key the extension reads besides PI_CODING_AGENT_DIR, from the search of
-// index.ts, src/*.ts and .env.example Eleanor Addendum 1 records.
+// index.ts and src/*.ts Eleanor Addendum 1 records.
 const CALLER_ENV_KEYS = [
 	"OMLX_API_KEY",
 	"OMLX_BASE_URL",

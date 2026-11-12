@@ -1,14 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { PROVIDER_KEY, readOmlxCredential } from "./src/auth-storage.ts";
-import { loadDotenvFromExtensionDir } from "./src/dotenv.ts";
-import {
-	createLoginOmlx,
-	getOmlxApiKey,
-	refreshOmlxToken,
-} from "./src/oauth-login.ts";
-
-loadDotenvFromExtensionDir(import.meta.url);
-
 import {
 	fetchModels,
 	type OmlxModel,
@@ -23,6 +14,11 @@ import {
 	resolveOmlxCredential,
 } from "./src/config.ts";
 import { omlxDebug } from "./src/debug.ts";
+import {
+	createLoginOmlx,
+	getOmlxApiKey,
+	refreshOmlxToken,
+} from "./src/oauth-login.ts";
 import { toProviderConfig } from "./src/provider.ts";
 import { applyOmlxThinkingControls } from "./src/thinking.ts";
 

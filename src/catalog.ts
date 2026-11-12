@@ -6,29 +6,13 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 export interface OmlxModel {
 	id: string;
 	displayName?: string;
-	description?: string;
-	modelAlias?: string;
 	contextWindow?: number;
 	maxTokens?: number;
 	/** Model architectural ceiling (`max_model_len`). Prio-3 fallback and clamp limit. */
 	archContextWindow?: number;
 	thinkingDefault?: boolean | null;
-	taskBudgetTokens?: number;
-	maxToolResultTokens?: number;
-	thinkingBudgetTokens?: number;
-	thinkingBudgetEnabled?: boolean;
-	preserveThinking?: boolean;
-	chatTemplateKwargs?: Record<string, unknown>;
-	forcedCtKwargs?: string[];
-	isDefault?: boolean;
-	isPinned?: boolean;
-	trustRemoteCode?: boolean;
-	ttlSeconds?: number;
-	indexCacheFreq?: number;
 	reasoningParser?: string;
-	activeProfileName?: string;
 	modelType?: string | null;
-	settingsSummary?: Record<string, unknown>;
 }
 
 export interface CatalogDebugEvent {
@@ -45,26 +29,12 @@ interface OmlxModelsStatusResponse {
 	models: Array<{
 		id: string;
 		display_name?: string | null;
-		description?: string | null;
-		model_alias?: string | null;
 		max_context_window?: number;
 		max_tokens?: number;
 		thinking_default?: boolean | null;
 		enable_thinking?: boolean | null;
-		max_tool_result_tokens?: number;
-		thinking_budget_tokens?: number;
-		thinking_budget_enabled?: boolean;
-		preserve_thinking?: boolean | null;
 		chat_template_kwargs?: Record<string, unknown> | null;
-		forced_ct_kwargs?: string[];
-		is_default?: boolean;
-		is_pinned?: boolean;
-		pinned?: boolean;
-		trust_remote_code?: boolean;
-		ttl_seconds?: number;
-		index_cache_freq?: number;
 		reasoning_parser?: string | null;
-		active_profile_name?: string | null;
 		model_type?: string | null;
 		engine_type?: string | null;
 		model_type_override?: string | null;
@@ -116,15 +86,10 @@ export function parseModelsStatusResponse(json: unknown): OmlxModel[] {
 		const m: OmlxModel = { id: entry.id };
 		if (typeof entry.display_name === "string" && entry.display_name.trim())
 			m.displayName = entry.display_name;
-		if (typeof entry.description === "string" && entry.description.trim())
-			m.description = entry.description;
-		if (typeof entry.model_alias === "string" && entry.model_alias.trim())
-			m.modelAlias = entry.model_alias;
 		if (typeof entry.max_context_window === "number")
 			m.contextWindow = entry.max_context_window;
 		if (typeof entry.max_tokens === "number") m.maxTokens = entry.max_tokens;
 		const chatTemplateKwargs = asRecord(entry.chat_template_kwargs);
-		if (chatTemplateKwargs) m.chatTemplateKwargs = chatTemplateKwargs;
 		if (typeof entry.enable_thinking === "boolean") {
 			m.thinkingDefault = entry.enable_thinking;
 		} else if (
@@ -135,39 +100,11 @@ export function parseModelsStatusResponse(json: unknown): OmlxModel[] {
 		} else if ("thinking_default" in entry) {
 			m.thinkingDefault = entry.thinking_default ?? null;
 		}
-		if (typeof entry.max_tool_result_tokens === "number")
-			m.maxToolResultTokens = entry.max_tool_result_tokens;
-		if (typeof entry.thinking_budget_tokens === "number")
-			m.thinkingBudgetTokens = entry.thinking_budget_tokens;
-		if (typeof entry.thinking_budget_enabled === "boolean")
-			m.thinkingBudgetEnabled = entry.thinking_budget_enabled;
-		if (typeof entry.preserve_thinking === "boolean")
-			m.preserveThinking = entry.preserve_thinking;
-		else if (typeof chatTemplateKwargs?.preserve_thinking === "boolean")
-			m.preserveThinking = chatTemplateKwargs.preserve_thinking;
-		if (Array.isArray(entry.forced_ct_kwargs)) {
-			m.forcedCtKwargs = entry.forced_ct_kwargs.filter(
-				(item): item is string => typeof item === "string",
-			);
-		}
-		if (typeof entry.is_default === "boolean") m.isDefault = entry.is_default;
-		if (typeof entry.is_pinned === "boolean") m.isPinned = entry.is_pinned;
-		else if (typeof entry.pinned === "boolean") m.isPinned = entry.pinned;
-		if (typeof entry.trust_remote_code === "boolean")
-			m.trustRemoteCode = entry.trust_remote_code;
-		if (typeof entry.ttl_seconds === "number") m.ttlSeconds = entry.ttl_seconds;
-		if (typeof entry.index_cache_freq === "number")
-			m.indexCacheFreq = entry.index_cache_freq;
 		if (
 			typeof entry.reasoning_parser === "string" &&
 			entry.reasoning_parser.trim()
 		)
 			m.reasoningParser = entry.reasoning_parser;
-		if (
-			typeof entry.active_profile_name === "string" &&
-			entry.active_profile_name.trim()
-		)
-			m.activeProfileName = entry.active_profile_name;
 		const type =
 			entry.model_type_override ?? entry.model_type ?? entry.engine_type;
 		if (typeof type === "string") m.modelType = type.toLowerCase();
@@ -201,11 +138,7 @@ export async function fetchModels(
 		models = parseModelsStatusResponse(json);
 		opts.onDebug?.({
 			kind: "catalog_status_loaded",
-			details: {
-				apiRoot,
-				count: models.length,
-				documenter: models.find((m) => m.id === "qwen3.6-8b-documenter"),
-			},
+			details: { apiRoot, count: models.length },
 		});
 		models = applyLocalModelSettings(
 			models,
@@ -434,12 +367,6 @@ export function applyLocalModelSettings(
 	return models.map((model) => {
 		const entry = (byModel as Record<string, unknown>)[model.id];
 		if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
-			if (model.id === "qwen3.6-8b-documenter") {
-				onDebug?.({
-					kind: "catalog_local_model_settings_missing",
-					details: { path, modelId: model.id },
-				});
-			}
 			return model;
 		}
 		const next = applyModelSettingsEntry(
@@ -470,15 +397,10 @@ function applyModelSettingsEntry(
 
 	if (typeof entry.display_name === "string" && entry.display_name.trim())
 		next.displayName = entry.display_name;
-	if (typeof entry.description === "string" && entry.description.trim())
-		next.description = entry.description;
-	if (typeof entry.model_alias === "string" && entry.model_alias.trim())
-		next.modelAlias = entry.model_alias;
 	if (typeof entry.enable_thinking === "boolean") {
 		next.thinkingDefault = entry.enable_thinking;
 	}
 	if (chatTemplateKwargs) {
-		next.chatTemplateKwargs = chatTemplateKwargs;
 		const enableThinking = chatTemplateKwargs.enable_thinking;
 		if (
 			typeof enableThinking === "boolean" &&
@@ -490,48 +412,13 @@ function applyModelSettingsEntry(
 	if (typeof entry.max_context_window === "number")
 		next.contextWindow = entry.max_context_window;
 	if (typeof entry.max_tokens === "number") next.maxTokens = entry.max_tokens;
-	if (typeof entry.task_budget_tokens === "number")
-		next.taskBudgetTokens = entry.task_budget_tokens;
-	if (typeof entry.max_tool_result_tokens === "number")
-		next.maxToolResultTokens = entry.max_tool_result_tokens;
-	if (typeof entry.thinking_budget_tokens === "number")
-		next.thinkingBudgetTokens = entry.thinking_budget_tokens;
-	if (typeof entry.thinking_budget_enabled === "boolean")
-		next.thinkingBudgetEnabled = entry.thinking_budget_enabled;
-	// preserve_thinking: top branch handles OmlxModelsStatusResponse (server path).
-	// Local model_settings.json always places this inside chat_template_kwargs,
-	// so the else-if branch is the active path for local files.
-	if (typeof entry.preserve_thinking === "boolean") {
-		next.preserveThinking = entry.preserve_thinking;
-	} else if (typeof chatTemplateKwargs?.preserve_thinking === "boolean") {
-		next.preserveThinking = chatTemplateKwargs.preserve_thinking;
-	}
-	if (Array.isArray(entry.forced_ct_kwargs)) {
-		next.forcedCtKwargs = entry.forced_ct_kwargs.filter(
-			(item): item is string => typeof item === "string",
-		);
-	}
-	if (typeof entry.is_default === "boolean") next.isDefault = entry.is_default;
-	if (typeof entry.is_pinned === "boolean") next.isPinned = entry.is_pinned;
-	if (typeof entry.trust_remote_code === "boolean")
-		next.trustRemoteCode = entry.trust_remote_code;
-	if (typeof entry.ttl_seconds === "number")
-		next.ttlSeconds = entry.ttl_seconds;
-	if (typeof entry.index_cache_freq === "number")
-		next.indexCacheFreq = entry.index_cache_freq;
 	if (
 		typeof entry.reasoning_parser === "string" &&
 		entry.reasoning_parser.trim()
 	)
 		next.reasoningParser = entry.reasoning_parser;
-	if (
-		typeof entry.active_profile_name === "string" &&
-		entry.active_profile_name.trim()
-	)
-		next.activeProfileName = entry.active_profile_name;
 	if (typeof entry.model_type_override === "string")
 		next.modelType = entry.model_type_override.toLowerCase();
-	next.settingsSummary = summarizeModelSettingsEntry(entry);
 	return next;
 }
 
@@ -545,7 +432,6 @@ function catalogCachePath(): string {
 interface CachedCatalog {
 	apiRoot: string;
 	models: OmlxModel[];
-	savedAt: number;
 }
 
 export function readCatalogCache(apiRoot: string): OmlxModel[] | undefined {
@@ -569,7 +455,7 @@ export function writeCatalogCache(apiRoot: string, models: OmlxModel[]): void {
 	try {
 		const file = catalogCachePath();
 		mkdirSync(dirname(file), { recursive: true });
-		const data: CachedCatalog = { apiRoot, models, savedAt: Date.now() };
+		const data: CachedCatalog = { apiRoot, models };
 		writeFileSync(file, JSON.stringify(data, null, 2));
 	} catch {
 		// Ignore write errors — cache is best-effort
@@ -583,100 +469,8 @@ export function resolveLocalModelSettingsPath(
 	return join(homedir(), ".omlx", "model_settings.json");
 }
 
-function summarizeModelSettingsEntry(
-	entry: Record<string, unknown>,
-): Record<string, unknown> {
-	const chatTemplateKwargs = asRecord(entry.chat_template_kwargs);
-	return (
-		compactObject({
-			identity: compactObject({
-				displayName: entry.display_name,
-				description: entry.description,
-				modelAlias: entry.model_alias,
-				modelTypeOverride: entry.model_type_override,
-			}),
-			thinking: compactObject({
-				enabled: entry.enable_thinking ?? chatTemplateKwargs?.enable_thinking,
-				budgetEnabled: entry.thinking_budget_enabled,
-				budgetTokens: entry.thinking_budget_tokens,
-				preserve:
-					entry.preserve_thinking ?? chatTemplateKwargs?.preserve_thinking,
-				reasoningEffort: chatTemplateKwargs?.reasoning_effort,
-				parser: entry.reasoning_parser,
-				forcedCtKwargs: entry.forced_ct_kwargs,
-			}),
-			chatTemplate: compactObject({
-				kwargs: chatTemplateKwargs,
-				forcedKeys: entry.forced_ct_kwargs,
-			}),
-			limits: compactObject({
-				contextWindow: entry.max_context_window,
-				maxTokens: entry.max_tokens,
-				maxToolResultTokens: entry.max_tool_result_tokens,
-			}),
-			sampling: compactObject({
-				temperature: entry.temperature,
-				topP: entry.top_p,
-				topK: entry.top_k,
-				minP: entry.min_p,
-				repetitionPenalty: entry.repetition_penalty,
-				presencePenalty: entry.presence_penalty,
-				forceSampling: entry.force_sampling,
-			}),
-			dflash: compactObject({
-				enabled: entry.dflash_enabled,
-				draftModel: entry.dflash_draft_model,
-				draftQuantBits: entry.dflash_draft_quant_bits,
-			}),
-			specprefill: compactObject({
-				enabled: entry.specprefill_enabled,
-				draftModel: entry.specprefill_draft_model,
-				keepPct: entry.specprefill_keep_pct,
-				threshold: entry.specprefill_threshold,
-			}),
-			turboquant: compactObject({
-				enabled: entry.turboquant_kv_enabled,
-				bits: entry.turboquant_kv_bits,
-				skipLast: entry.turboquant_skip_last,
-			}),
-			lifecycle: compactObject({
-				isDefault: entry.is_default,
-				isPinned: entry.is_pinned,
-				ttlSeconds: entry.ttl_seconds,
-				indexCacheFreq: entry.index_cache_freq,
-			}),
-			security: compactObject({
-				trustRemoteCode: entry.trust_remote_code,
-			}),
-			profile: compactObject({
-				activeProfileName: entry.active_profile_name,
-			}),
-			bridge: compactObject({
-				taskBudgetTokens: entry.task_budget_tokens,
-			}),
-		}) ?? {}
-	);
-}
-
 function asRecord(value: unknown): Record<string, unknown> | undefined {
 	return value && typeof value === "object" && !Array.isArray(value)
 		? (value as Record<string, unknown>)
 		: undefined;
-}
-
-function compactObject(
-	record: Record<string, unknown>,
-): Record<string, unknown> | undefined {
-	const entries = Object.entries(record).filter(([, value]) => {
-		if (value === undefined) return false;
-		if (
-			value &&
-			typeof value === "object" &&
-			!Array.isArray(value) &&
-			Object.keys(value).length === 0
-		)
-			return false;
-		return true;
-	});
-	return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 }

@@ -92,20 +92,18 @@ test("toProviderConfig maps displayName to Pi name and keeps OMLX-only settings 
 		{
 			id: "raw-model-id",
 			displayName: "Human Model Name",
-			description: "Shown in /omlx-status only",
 			contextWindow: 32768,
 			maxTokens: 8192,
-			taskBudgetTokens: 64000,
-			maxToolResultTokens: 4096,
-			settingsSummary: { sampling: { temperature: 0.2 } },
+			archContextWindow: 65536,
+			reasoningParser: "qwen",
+			thinkingDefault: true,
 		},
 	]);
 
 	const model = config.models?.[0] as unknown as Record<string, unknown>;
 	assert.equal(model.name, "Human Model Name");
 	assert.equal(model.id, "raw-model-id");
-	assert.equal("description" in model, false);
-	assert.equal("taskBudgetTokens" in model, false);
-	assert.equal("maxToolResultTokens" in model, false);
-	assert.equal("settingsSummary" in model, false);
+	assert.equal("archContextWindow" in model, false);
+	assert.equal("reasoningParser" in model, false);
+	assert.equal("thinkingDefault" in model, false);
 });

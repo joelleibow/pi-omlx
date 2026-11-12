@@ -104,24 +104,10 @@ test("parseModelsStatusResponse extracts Pi-supported fields and OMLX-only metad
 			{
 				id: "m1",
 				display_name: "Reasoning Model",
-				description: "Local reasoning lane",
-				model_alias: "reasoning-model",
 				max_context_window: 256000,
 				max_tokens: 32768,
 				thinking_default: true,
-				max_tool_result_tokens: 4096,
-				thinking_budget_enabled: true,
-				thinking_budget_tokens: 8192,
-				preserve_thinking: false,
-				chat_template_kwargs: { preserve_thinking: true },
-				forced_ct_kwargs: ["enable_thinking"],
-				is_default: true,
-				pinned: true,
-				trust_remote_code: false,
-				ttl_seconds: 300,
-				index_cache_freq: 4,
 				reasoning_parser: "qwen",
-				active_profile_name: "agentic",
 				model_type_override: "vlm",
 			},
 			{
@@ -136,24 +122,10 @@ test("parseModelsStatusResponse extracts Pi-supported fields and OMLX-only metad
 		{
 			id: "m1",
 			displayName: "Reasoning Model",
-			description: "Local reasoning lane",
-			modelAlias: "reasoning-model",
 			contextWindow: 256000,
 			maxTokens: 32768,
 			thinkingDefault: true,
-			maxToolResultTokens: 4096,
-			thinkingBudgetEnabled: true,
-			thinkingBudgetTokens: 8192,
-			preserveThinking: false,
-			chatTemplateKwargs: { preserve_thinking: true },
-			forcedCtKwargs: ["enable_thinking"],
-			isDefault: true,
-			isPinned: true,
-			trustRemoteCode: false,
-			ttlSeconds: 300,
-			indexCacheFreq: 4,
 			reasoningParser: "qwen",
-			activeProfileName: "agentic",
 			modelType: "vlm",
 		},
 		{ id: "m2", contextWindow: 128000, maxTokens: 8192, thinkingDefault: null },
@@ -288,33 +260,12 @@ test("fetchModels applies local OMLX model settings for localhost metadata refin
 		assert.equal(model.contextWindow, 262144);
 		assert.equal(model.maxTokens, 81920);
 		assert.equal(model.thinkingDefault, false);
-		assert.equal(model.preserveThinking, true);
-		assert.deepEqual(model.forcedCtKwargs, ["enable_thinking"]);
-		assert.equal(model.thinkingBudgetEnabled, false);
-		assert.equal(model.thinkingBudgetTokens, 0);
-		assert.deepEqual(model.settingsSummary, {
-			thinking: {
-				enabled: false,
-				budgetEnabled: false,
-				budgetTokens: 0,
-				preserve: true,
-				forcedCtKwargs: ["enable_thinking"],
-			},
-			chatTemplate: {
-				kwargs: { enable_thinking: false, preserve_thinking: true },
-				forcedKeys: ["enable_thinking"],
-			},
-			limits: {
-				contextWindow: 262144,
-				maxTokens: 81920,
-			},
-		});
 	} finally {
 		globalThis.fetch = originalFetch;
 	}
 });
 
-test("applyLocalModelSettings projects full model_settings entry into bridge metadata", () => {
+test("applyLocalModelSettings projects a full model_settings entry onto the fields the extension reads", () => {
 	const dir = mkdtempSync(join(inject("isolationRoot"), "pi-omlx-"));
 	const settingsPath = join(dir, "model_settings.json");
 	writeFileSync(
@@ -376,98 +327,11 @@ test("applyLocalModelSettings projects full model_settings entry into bridge met
 	);
 
 	assert.equal(model.displayName, "Vision Lane");
-	assert.equal(model.description, "Useful for screenshots");
-	assert.equal(model.modelAlias, "vision");
 	assert.equal(model.thinkingDefault, true);
 	assert.equal(model.contextWindow, 512000);
 	assert.equal(model.maxTokens, 131072);
-	assert.equal(model.taskBudgetTokens, 64000);
-	assert.equal(model.maxToolResultTokens, 4096);
-	assert.equal(model.thinkingBudgetEnabled, true);
-	assert.equal(model.thinkingBudgetTokens, 12000);
-	assert.equal(model.preserveThinking, true);
-	assert.deepEqual(model.forcedCtKwargs, [
-		"enable_thinking",
-		"preserve_thinking",
-	]);
-	assert.equal(model.isDefault, true);
-	assert.equal(model.isPinned, true);
-	assert.equal(model.trustRemoteCode, false);
-	assert.equal(model.ttlSeconds, 300);
-	assert.equal(model.indexCacheFreq, 4);
 	assert.equal(model.reasoningParser, "qwen");
-	assert.equal(model.activeProfileName, "agentic");
 	assert.equal(model.modelType, "vlm");
-	assert.deepEqual(model.settingsSummary, {
-		identity: {
-			displayName: "Vision Lane",
-			description: "Useful for screenshots",
-			modelAlias: "vision",
-			modelTypeOverride: "VLM",
-		},
-		thinking: {
-			enabled: true,
-			budgetEnabled: true,
-			budgetTokens: 12000,
-			preserve: true,
-			reasoningEffort: "high",
-			parser: "qwen",
-			forcedCtKwargs: ["enable_thinking", "preserve_thinking"],
-		},
-		chatTemplate: {
-			kwargs: {
-				enable_thinking: false,
-				preserve_thinking: true,
-				reasoning_effort: "high",
-			},
-			forcedKeys: ["enable_thinking", "preserve_thinking"],
-		},
-		limits: {
-			contextWindow: 512000,
-			maxTokens: 131072,
-			maxToolResultTokens: 4096,
-		},
-		sampling: {
-			temperature: 0.2,
-			topP: 0.95,
-			topK: 40,
-			minP: 0.05,
-			repetitionPenalty: 1.05,
-			presencePenalty: 0.1,
-			forceSampling: true,
-		},
-		dflash: {
-			enabled: true,
-			draftModel: "draft-qwen",
-			draftQuantBits: 4,
-		},
-		specprefill: {
-			enabled: true,
-			draftModel: "prefill-qwen",
-			keepPct: 0.5,
-			threshold: 256,
-		},
-		turboquant: {
-			enabled: true,
-			bits: 4,
-			skipLast: false,
-		},
-		lifecycle: {
-			isDefault: true,
-			isPinned: true,
-			ttlSeconds: 300,
-			indexCacheFreq: 4,
-		},
-		security: {
-			trustRemoteCode: false,
-		},
-		profile: {
-			activeProfileName: "agentic",
-		},
-		bridge: {
-			taskBudgetTokens: 64000,
-		},
-	});
 });
 
 test("fetchModels emits catalog debug events for local settings refinement", async () => {
@@ -513,6 +377,35 @@ test("fetchModels emits catalog debug events for local settings refinement", asy
 	} finally {
 		globalThis.fetch = originalFetch;
 	}
+});
+
+// design decision 4: the applied event fires on a change the extension reads,
+// never on an entry that carries only keys the overlay has dropped.
+test("an overlay entry carrying only unread keys emits no applied event", () => {
+	const dir = mkdtempSync(join(inject("isolationRoot"), "pi-omlx-"));
+	const settingsPath = join(dir, "model_settings.json");
+	writeFileSync(
+		settingsPath,
+		JSON.stringify({
+			version: 1,
+			models: {
+				"quiet-lane": { is_pinned: true, ttl_seconds: 300 },
+			},
+		}),
+	);
+	const kinds: string[] = [];
+
+	applyLocalModelSettings(
+		[{ id: "quiet-lane" }],
+		"http://127.0.0.1:8000/v1",
+		settingsPath,
+		(event) => kinds.push(event.kind),
+	);
+
+	assert.deepEqual(
+		kinds.filter((kind) => kind === "catalog_local_model_settings_applied"),
+		[],
+	);
 });
 
 test("applyLocalModelSettings honors explicit missing path without changing metadata", () => {
@@ -642,7 +535,6 @@ test("a cache read follows the agent directory in force when it runs", () => {
 		JSON.stringify({
 			apiRoot,
 			models: [{ id: "b-model", contextWindow: 8192, maxTokens: 1024 }],
-			savedAt: Date.now(),
 		}),
 	);
 	const savedAgentDir = process.env.PI_CODING_AGENT_DIR;

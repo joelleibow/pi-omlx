@@ -231,7 +231,6 @@ function fakePi() {
 interface CacheFixture {
 	apiRoot: string;
 	models: OmlxModel[];
-	savedAt: number;
 }
 
 // The cache file under the test's own agent directory: `dir` is what
@@ -244,10 +243,7 @@ function cacheFixturePath(): string {
 function writeCacheFixture(apiRoot: string, models: OmlxModel[]): void {
 	const path = cacheFixturePath();
 	mkdirSync(dirname(path), { recursive: true });
-	writeFileSync(
-		path,
-		JSON.stringify({ apiRoot, models, savedAt: Date.now() }, null, 2),
-	);
+	writeFileSync(path, JSON.stringify({ apiRoot, models }, null, 2));
 }
 
 function readCacheFixture(): CacheFixture | undefined {

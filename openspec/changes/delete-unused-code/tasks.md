@@ -11,7 +11,7 @@ Every task is committed separately. A task that checks the shape of its diff mea
 
 ## 1. Before The Code
 
-- [ ] 1.1 (Joel's) Capture the `/model` parity baseline before any code commit, from the audited tree. Verify: `/tmp/omlx-parity/before.json` holds the models array and `/tmp/omlx-parity/before-list.txt` holds the model list.
+- [x] 1.1 (Joel's) Capture the `/model` parity baseline before any code commit, from the audited tree. Verify: `/tmp/omlx-parity/before.json` holds the models array and `/tmp/omlx-parity/before-list.txt` holds the model list.
 
   Exact commands. The copies and the dump only read his two directories; everything the dump writes, including the catalog cache the extension writes under the copied agent directory, lands in `/tmp/omlx-parity/`.
 
@@ -34,6 +34,8 @@ Every task is committed separately. A task that checks the shape of its diff mea
   - Red evidence: none. This task takes the reference the last task compares against; without it there is nothing to diff (council.md #13).
   - Boundary cases: none.
   - Traces to: design step 0, decision 13.
+
+  - Joel, 2026-11-12, at the planning head `29468cb` (no code change since `0411d6a`), with the dump run as `node_modules/.bin/tsx /tmp/omlx-parity/dump.ts` (Derek: bare `node` does not run it): "dump ok"; `/tmp/omlx-parity/before.json` 3117 bytes, `/tmp/omlx-parity/before-list.txt` 1023 bytes.
 
 ## 2. Structure: The Move And The Stale Import
 

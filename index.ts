@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { PROVIDER_KEY } from "./src/auth-storage.ts";
+import { PROVIDER_KEY, readOmlxCredential } from "./src/auth-storage.ts";
 import { loadDotenvFromExtensionDir } from "./src/dotenv.ts";
 import {
 	createLoginOmlx,
@@ -17,11 +17,10 @@ import {
 	writeCatalogCache,
 } from "./src/catalog.ts";
 import {
-	DEFAULT_OMLX_BASE_URL,
-	hasOmlxTarget,
-	loadConfig,
-	type OmlxConfig,
-	resolveConfiguredApiKey,
+	type ConfiguredOmlxCredential,
+	CREDENTIAL_SOURCE_STORED,
+	OMLX_API_KEY_ENV_VAR,
+	resolveOmlxCredential,
 } from "./src/config.ts";
 import { omlxDebug } from "./src/debug.ts";
 import { toProviderConfig } from "./src/provider.ts";
@@ -36,7 +35,6 @@ const BACKOFF_BASE_MS = 2_000;
 const BACKOFF_MAX_MS = 60_000;
 
 interface State {
-	config: OmlxConfig | undefined;
 	catalog: OmlxModel[];
 	registered: boolean;
 	stopped: boolean;
@@ -51,7 +49,6 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 	globalState[EXTENSION_SINGLETON_KEY] = true;
 
 	const state: State = {
-		config: undefined,
 		catalog: [],
 		registered: false,
 		stopped: false,
@@ -121,14 +118,6 @@ async function startPolling(pi: ExtensionAPI, state: State): Promise<void> {
 	}
 }
 
-function tryLoadConfig(): OmlxConfig | undefined {
-	try {
-		return loadConfig();
-	} catch {
-		return undefined;
-	}
-}
-
 // Attached to every registerProvider call so "Use a subscription" in pi's
 // native /login always offers OMLX with a base-URL prompt (e.g. a Tailscale
 // host) followed by an API key prompt. "Use an API key" only asks for a key.
@@ -139,12 +128,12 @@ function buildOmlxOauth(pi: ExtensionAPI, state: State) {
 	return {
 		name: "OMLX",
 		login: createLoginOmlx(async (baseUrl, apiKey) => {
-			const result = await fetchAndRegister(
-				pi,
-				state,
-				{ apiRoot: baseUrl, apiKeyEnvVar: "OMLX_API_KEY" },
+			const result = await fetchAndRegister(pi, state, {
+				configured: true,
+				apiRoot: baseUrl,
 				apiKey,
-			);
+				source: CREDENTIAL_SOURCE_STORED,
+			});
 			return result === "registered"
 				? { ok: true as const }
 				: { ok: false as const, error: state.lastError ?? "unknown error" };
@@ -157,18 +146,17 @@ function buildOmlxOauth(pi: ExtensionAPI, state: State) {
 function registerModels(
 	pi: ExtensionAPI,
 	state: State,
-	config: OmlxConfig,
+	credential: ConfiguredOmlxCredential,
 	models: OmlxModel[],
 	modelSettingsPath?: string,
-	explicitApiKey?: string,
 ): void {
-	const keyless = !explicitApiKey && !resolveConfiguredApiKey();
+	const keyless = credential.apiKey === "";
 	pi.registerProvider(PROVIDER, {
 		name: "OMLX",
 		oauth: buildOmlxOauth(pi, state),
 		...toProviderConfig(
-			config.apiRoot,
-			config.apiKeyEnvVar,
+			credential.apiRoot,
+			OMLX_API_KEY_ENV_VAR,
 			models,
 			undefined,
 			{
@@ -176,7 +164,6 @@ function registerModels(
 			},
 		),
 	});
-	state.config = config;
 	state.catalog = models;
 	state.registered = true;
 	state.lastError = undefined;
@@ -218,19 +205,14 @@ function registerLoginOnlyProvider(pi: ExtensionAPI, state: State): void {
 }
 
 function registerCachedOrSetupModels(pi: ExtensionAPI, state: State): void {
-	const config = tryLoadConfig() ?? {
-		apiRoot: DEFAULT_OMLX_BASE_URL,
-		apiKeyEnvVar: "OMLX_API_KEY",
-	};
-	const configured = resolveConfiguredApiKey() || hasOmlxTarget();
-	const models = configured
-		? registrableCachedModels(readCatalogCache(config.apiRoot))
+	const credential = resolveOmlxCredential(readOmlxCredential(), process.env);
+	const models = credential.configured
+		? registrableCachedModels(readCatalogCache(credential.apiRoot))
 		: undefined;
-	if (!models) {
-		state.config = config;
+	if (!credential.configured || !models) {
 		state.catalog = [];
 		state.registered = false;
-		state.lastError = configured
+		state.lastError = credential.configured
 			? "No cached OMLX models with real max_context_window/max_tokens; waiting for live catalog refresh."
 			: "OMLX credentials are not set. Run /login and choose OMLX.";
 		state.lastRefreshAt = new Date().toISOString();
@@ -239,7 +221,7 @@ function registerCachedOrSetupModels(pi: ExtensionAPI, state: State): void {
 		return;
 	}
 
-	registerModels(pi, state, config, models);
+	registerModels(pi, state, credential, models);
 }
 
 type RefreshResult = "registered" | "not_configured" | "failed";
@@ -249,27 +231,25 @@ async function refreshProvider(
 	state: State,
 	opts: { timeoutMs?: number } = {},
 ): Promise<RefreshResult> {
-	const config = loadConfig();
-	const apiKey = resolveConfiguredApiKey();
-	if (!apiKey && !hasOmlxTarget()) {
+	const credential = resolveOmlxCredential(readOmlxCredential(), process.env);
+	if (!credential.configured) {
 		state.lastError = "OMLX credentials are not set";
 		return "not_configured";
 	}
-	return fetchAndRegister(pi, state, config, apiKey ?? "", opts);
+	return fetchAndRegister(pi, state, credential, opts);
 }
 
 /**
- * Fetches the live catalog for an explicit apiRoot/apiKey and registers it.
- * Used by the poll loop (values re-derived from storage/env) and by the
- * oauth login flow (values just entered in the dialog, before pi persists
- * them) — the login flow can't wait for the poll's next tick, since pi
- * calls modelRegistry.refresh() synchronously right after login() resolves.
+ * Fetches the live catalog for one resolved credential and registers it.
+ * Used by the poll loop (one resolution per cycle) and by the oauth login flow
+ * (the URL and key just entered in the dialog, before pi persists them) — the
+ * login flow can't wait for the poll's next tick, since pi calls
+ * modelRegistry.refresh() synchronously right after login() resolves.
  */
 async function fetchAndRegister(
 	pi: ExtensionAPI,
 	state: State,
-	config: OmlxConfig,
-	apiKey: string,
+	credential: ConfiguredOmlxCredential,
 	opts: { timeoutMs?: number } = {},
 ): Promise<RefreshResult> {
 	const modelSettingsPath = resolveLocalModelSettingsPath(
@@ -278,7 +258,7 @@ async function fetchAndRegister(
 
 	let models: OmlxModel[];
 	try {
-		models = await fetchModels(config.apiRoot, apiKey, {
+		models = await fetchModels(credential.apiRoot, credential.apiKey, {
 			modelSettingsPath,
 			timeoutMs: opts.timeoutMs,
 		});
@@ -298,8 +278,8 @@ async function fetchAndRegister(
 		return "failed";
 	}
 
-	writeCatalogCache(config.apiRoot, registrable);
-	registerModels(pi, state, config, registrable, modelSettingsPath, apiKey);
+	writeCatalogCache(credential.apiRoot, registrable);
+	registerModels(pi, state, credential, registrable, modelSettingsPath);
 	return "registered";
 }
 

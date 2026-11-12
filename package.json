@@ -38,7 +38,7 @@
 	},
 	"devDependencies": {
 		"@biomejs/biome": "latest",
-		"@earendil-works/pi-ai": "^0.80.9",
+		"@earendil-works/pi-ai": "^1.5.2",
 		"@earendil-works/pi-coding-agent": "^1.5.2",
 		"@types/node": "latest",
 		"tsx": "latest",
@@ -46,9 +46,8 @@
 		"vitest": "latest"
 	},
 	"allowScripts": {
-		"@google/genai@1.52.0": true,
-		"protobufjs@7.5.9": true,
-		"protobufjs@7.6.4": true,
+		"@google/genai@2.21.0": true,
+		"protobufjs@7.6.6": true,
 		"esbuild@0.28.1": true,
 		"fsevents@2.3.3": true
 	}

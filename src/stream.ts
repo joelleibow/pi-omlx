@@ -2,10 +2,10 @@ import {
 	type Api,
 	type AssistantMessageEvent,
 	type AssistantMessageEventStream,
-	type Context,
 	createAssistantMessageEventStream,
 	type Model,
 	type SimpleStreamOptions,
+	type TranscriptContext,
 } from "@earendil-works/pi-ai";
 // Resolve the concrete OpenAI Completions stream once, via the lazy API factory
 // re-exported from compat. Calling the compat `streamSimple` dispatcher from
@@ -88,7 +88,7 @@ function flushThinking(
 async function runAttempt(
 	writer: StreamWriter,
 	model: Model<Api>,
-	context: Context,
+	context: TranscriptContext,
 	options: SimpleStreamOptions | undefined,
 	firstDeltaTimeoutMs: number,
 	attempt: number,
@@ -182,7 +182,7 @@ async function runAttempt(
 
 export function streamOmlxOpenAICompletions(
 	model: Model<Api>,
-	context: Context,
+	context: TranscriptContext,
 	options: SimpleStreamOptions | undefined,
 	firstDeltaTimeoutMs: number,
 	onTimeout: OnStreamTimeout | undefined,

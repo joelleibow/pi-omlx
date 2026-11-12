@@ -1,8 +1,7 @@
 import { strict as assert } from "node:assert";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, beforeEach, test } from "vitest";
+import { afterEach, beforeEach, inject, test } from "vitest";
 import {
 	_setAuthPathForTesting,
 	PROVIDER_KEY,
@@ -13,7 +12,7 @@ let dir: string;
 let savedAgentDir: string | undefined;
 
 beforeEach(() => {
-	dir = mkdtempSync(join(tmpdir(), "pi-omlx-auth-"));
+	dir = mkdtempSync(join(inject("isolationRoot"), "pi-omlx-auth-"));
 	savedAgentDir = process.env.PI_CODING_AGENT_DIR;
 	_setAuthPathForTesting(join(dir, "auth.json"));
 });
@@ -21,7 +20,6 @@ afterEach(() => {
 	_setAuthPathForTesting(undefined);
 	if (savedAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 	else process.env.PI_CODING_AGENT_DIR = savedAgentDir;
-	rmSync(dir, { recursive: true, force: true });
 });
 
 test("PROVIDER_KEY is omlx", () => {

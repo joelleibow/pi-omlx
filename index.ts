@@ -177,6 +177,7 @@ function registerModels(
 		provider: PROVIDER,
 		models: models.length,
 		streamSimple: true,
+		source: credential.source,
 	});
 }
 

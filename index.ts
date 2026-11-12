@@ -14,6 +14,7 @@ import {
 	resolveOmlxCredential,
 } from "./src/config.ts";
 import { omlxDebug } from "./src/debug.ts";
+import type { RefreshResult } from "./src/notice.ts";
 import {
 	createLoginOmlx,
 	getOmlxApiKey,
@@ -225,8 +226,6 @@ function registerCachedOrSetupModels(pi: ExtensionAPI, state: State): void {
 
 	registerModels(pi, state, credential, models);
 }
-
-type RefreshResult = "registered" | "not_configured" | "failed";
 
 async function refreshProvider(
 	pi: ExtensionAPI,

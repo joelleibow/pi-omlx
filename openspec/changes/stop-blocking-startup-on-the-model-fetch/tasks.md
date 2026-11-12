@@ -4,7 +4,7 @@ Structure groups 1 and 5 have no red step, because there is no failing test to w
 
 ## 1. Structure: the module boundary and the test harness
 
-- [ ] 1.1 Move `RefreshResult` from `index.ts` into `src/notice.ts` and export it there, with `index.ts` importing it (design D4). Verification: `npm run check` exits 0 with no test changed; a search for the declaration returns one line, in `src/notice.ts`, and `index.ts` imports the type instead of declaring it. No behaviour changes; boundary cases: none.
+- [x] 1.1 Move `RefreshResult` from `index.ts` into `src/notice.ts` and export it there, with `index.ts` importing it (design D4). Verification: `npm run check` exits 0 with no test changed; a search for the declaration returns one line, in `src/notice.ts`, and `index.ts` imports the type instead of declaring it. No behaviour changes; boundary cases: none.
 - [ ] 1.2 Extend the fake pi in `test/index.test.ts` with `session_start` dispatch, a recorder for `notify` calls and a recorder for `setModel` calls, widen `recordCatalogFetches`'s `respond` to `() => Response | Promise<Response>` so a test can hold a response open, and add a helper that reads and writes the cache fixture at the isolation-root path `<isolationRoot>/agent/cache/omlx-models.json`, since `CACHE_FILE` is captured at import (design D9; Michael's trap 4). Verification: `npm run check` exits 0 and every existing test passes unchanged; the harness is consumed by 2.1, 2.2, 2.3, 3.2, 3.3, 3.5, 4.1 and 4.2. Boundary cases: none.
 
 ## 2. Behaviour: startup never waits on the catalog (requirement 1)

@@ -23,7 +23,8 @@ export function catalogNotice(
 }
 
 function unavailableWithCache(url: string, cachedCount: number): string {
-	return `oMLX model list unavailable at ${url}; using ${cachedCount} cached models.`;
+	const noun = cachedCount === 1 ? "model" : "models";
+	return `oMLX model list unavailable at ${url}; using ${cachedCount} cached ${noun}.`;
 }
 
 function unavailableLoginOnly(url: string): string {

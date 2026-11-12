@@ -11,6 +11,13 @@ test("a failed load with cached models names the URL and the count", () => {
 	);
 });
 
+test("a failed load with one cached model says model, not models", () => {
+	assert.equal(
+		catalogNotice("failed", false, URL_ROOT, 1),
+		`oMLX model list unavailable at ${URL_ROOT}; using 1 cached model.`,
+	);
+});
+
 test("a failed load with no cache names the login-only provider", () => {
 	assert.equal(
 		catalogNotice("failed", true, URL_ROOT, 0),

@@ -16,8 +16,8 @@ opened this card to remove it (owner-rulings §1). PR #8 neutralized the same re
 with a `node:fs` mock and left the deletion here: "Deleting the loader stays on its own card"
 (archived `isolate-the-suite-from-the-agent-directory/owner-rulings.md` §5, quoted as Michael's
 decision 2). This card removes the loader. The mock goes with it, because Michael measured that a
-poisoned `.env` gives 93/93 and an exit-0 `npm run check` whether the mock is present or removed,
-so no input can make its scenario fail (Michael, "What is settled").
+poisoned `.env` gives a green suite and an exit-0 `npm run check` whether the mock is present or
+removed, so no input can make its scenario fail (Michael, "What is settled").
 
 ## What Changes
 
@@ -32,9 +32,9 @@ so no input can make its scenario fail (Michael, "What is settled").
   And a published install never carried a `.env`: `package.json`'s `files` allow-list excluded it
   before this change (Chidi Addendum 1, HEAD-exact `npm pack --dry-run` with a root `.env` in
   place).
-- `test/dotenv.test.ts` goes with the module it tests. The suite drops from 12 files and 95 tests
-  to 11 and 93 (Michael, "Counts move"; both research addenda measure the 12/95 baseline at
-  `c5581d6`).
+- `test/dotenv.test.ts` goes with the module it tests, taking its two tests with it, and one test
+  lands in `test/index.test.ts` for the new capability. This proposal names what moves and not the
+  suite's total, which the new test would make stale (Michael, C4 ruling).
 - The `vi.mock("node:fs")` block in `test/isolation/worker-setup.ts` is removed, together with the
   scenario "A .env beside index.ts does not reach the suite" in `openspec/specs/test-isolation`.
   With no reader left, no input can make that scenario fail, and a test that cannot fail proves
@@ -44,11 +44,15 @@ so no input can make its scenario fail (Michael, "What is settled").
   citation in the comment above them, which would otherwise name a deleted file (Michael, settled
   by the provenance rule).
 - `.env.example` is deleted, which is the card's second acceptance criterion (quoted in Michael's
-  decision 1), and the direnv guidance that replaces it lands in the docs pass under Joel's
-  standing ruling that documentation never blocks a feature (Michael, decision 6).
-- `.gitignore` keeps its `.env` line, and `.npmignore` is left alone. An ignore entry points
-  nobody at a `.env`; it keeps a key out of git, and `files` already decides what npm packs
-  (Michael's ruling, with Chidi Addendum 1's measurements behind it).
+  decision 1). The direnv guidance that replaces it lands in the docs pass, beside
+  `CONTRIBUTING.md`'s script tasks: an untracked `.envrc` in the clone exporting the two variables,
+  then `direnv allow` (Michael, C4 ruling, under Joel's standing ruling that documentation never
+  blocks a feature).
+- `.gitignore` keeps its `.env` line and gains `.envrc` beside it, in the implementation diff,
+  because the guidance above tells contributors to hold a key in an untracked `.envrc` in the clone
+  and nothing else keeps it from `git add` (Michael, C5 ruling). `.npmignore` is left alone: an
+  ignore entry points nobody at a `.env`, and `package.json`'s `files` already decides what npm
+  packs (Chidi Addendum 1).
 
 The change deliberately does not touch how the dev scripts get their configuration, beyond pointing
 at direnv. `scripts/*.ts` read `process.env` directly and import neither `index.ts` nor
@@ -71,7 +75,7 @@ at direnv. `scripts/*.ts` read `process.env` directly and import neither `index.
   validation refuses a `MODIFIED` block that omits a scenario the living spec still has ("a MODIFIED
   requirement replaces the whole block, so archive refuses to drop them"), so the delta removes the
   requirement and adds it back as "Every Run Isolates Itself From Operator State And Caller
-  Environment", with the same text and both overlay scenarios. That new name is with Michael.
+  Environment", with the same text and both overlay scenarios (Michael accepted this rename).
 
 A new capability carries the first acceptance criterion rather than an extension of
 `credential-resolution`. That capability owns which credential decides the base URL, the key and
@@ -92,22 +96,21 @@ were read for what must not change and are not modified by this change.
 - **Code removed:** `src/dotenv.ts`, `test/dotenv.test.ts`, `.env.example`.
 - **Code edited:** `index.ts` (the import and the startup call, with the import grouping Biome
   reorders afterwards), `test/isolation/worker-setup.ts` (the `vi.mock` block, plus the `vi` and
-  `PathLike` imports it leaves unused), `test/isolation/global-setup.ts` (one comment).
+  `PathLike` imports it leaves unused), `test/isolation/global-setup.ts` (one comment),
+  `test/index.test.ts` (the new test and the entry-function parameter on its extension driver),
+  `.gitignore` (one line).
 - **Specs:** the new `environment-configuration` capability, and a delta to `test-isolation`.
 - **Users:** the breaking case above, bounded by `credential-resolution`. One semantic shift is
-  worth naming: the `.env` reached every pi session started in the clone, while direnv reaches only
+  worth naming: the `.env` reached every pi session that loads the clone, while direnv reaches only
   launches under the project directory. ADR 0001 makes `/login` the global mechanism, so nothing a
-  spec promises is lost (Michael, "Behavior change").
-- **Documentation this change makes false,** for the docs pass and not for this diff:
-  `ARCHITECTURE.md:71` (the worker setup keeping a `.env` out of the run), `CONTRIBUTING.md`'s
-  script environment guidance, and the `.env` guidance in `CONFIGURATION.md` and `README.md`
-  (Michael, "Traps"). `AGENTS.md` needs nothing.
-- **Left to the council and the design:** whether the direnv guidance has contributors put an
-  `.envrc` inside the clone, and so whether `.gitignore` gains `.envrc` beside `.env` (Michael's
-  one open point, with his choice stated). This proposal does not settle it.
-- **With Michael:** the name of the re-added `test-isolation` requirement, which the validation
-  mechanism above forces and his ruling did not name. The draft carries "Every Run Isolates Itself
-  From Operator State And Caller Environment".
-- **Baseline:** `npm run check` green at `c5581d6`, with Biome over 39 files, TypeScript clean, and
-  Vitest at 12 files and 95 tests (Eleanor's baseline rerun and Addendum 1; Chidi's addendum agrees
-  on HEAD's `files`, `.gitignore` and `.npmignore`).
+  spec promises is lost (Michael, "Behavior change" and C4 ruling).
+- **Documentation,** for the docs pass and not for this diff: `ARCHITECTURE.md:71` loses its clause
+  about the worker setup keeping a `.env` out of the run, and `CONTRIBUTING.md` gains the direnv
+  guidance. `README.md`, `docs/CONFIGURATION.md` and `AGENTS.md` stay as they are, since none of
+  them mentions `.env` (Eleanor Addendum 3; Michael, C4 ruling and traps).
+- **Settled in `council.md`:** where the proving test lives, how it loads a copy of the extension,
+  and the `.envrc` line the direnv guidance needs. This proposal points there rather than repeating
+  them.
+- **Baseline:** `npm run check` green at `c5581d6`, Biome and TypeScript clean and the suite
+  passing (Eleanor's baseline rerun and Addendum 1; Chidi's addendum agrees on HEAD's `files`,
+  `.gitignore` and `.npmignore`).

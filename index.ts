@@ -151,9 +151,9 @@ function registerModels(
 	modelSettingsPath?: string,
 ): void {
 	const keyless = credential.apiKey === "";
-	// registerProvider merges defined values, so a keyless registration would
-	// inherit the previous apiKey. The trigger is the shape, not remembered
-	// keyed-ness: pi stays keyless until it is told otherwise.
+	// registerProvider merges defined values, so a keyless registration that
+	// omits apiKey inherits the previous one. The trigger is the registration
+	// shape, never remembered keyed-ness.
 	if (keyless) pi.unregisterProvider(PROVIDER);
 	pi.registerProvider(PROVIDER, {
 		name: "OMLX",

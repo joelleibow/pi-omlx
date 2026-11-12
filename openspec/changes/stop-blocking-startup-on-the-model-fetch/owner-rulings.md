@@ -21,3 +21,15 @@ From `openspec/changes/archive/2026-11-11-isolate-the-suite-from-the-agent-direc
 > "#2 is a must address. Tests never mutate operating functionality."
 
 > "I noticed that there is implementation in files like @src/auth-storage.ts that's solely for testing, e.g. `_setAuthPathForTesting`. For me this is a smell and if we're taking this as our own, I don't want those smells. That's gross. Let's address it."
+
+## 2026-11-11 — No-cache startup does not wait
+
+Asked "With no model cache (a first run, or after /login to a new URL), pi picks its starting model before the oMLX model list arrives, about 100 ms later. What should happen then?", Joel chose "Start without waiting (Recommended)", described as: "Startup never waits. If your saved default is an omlx model and nothing is cached, pi starts on another provider's model, or none. The list arrives a moment later and you switch with /model. The docs say so. This is Michael's lean."
+
+Decided: startup never waits on the model fetch, cached or not. The no-cache behaviour is that pi starts without the oMLX catalog, and it is documented.
+
+## 2026-11-11 — One notice when it matters
+
+Asked "Should the extension tell you when the model list can't be fetched, or arrives after startup?", Joel chose "One notice when it matters (Recommended)", described as: "Show one warning per session when the list fails or arrives late, naming the URL and whether cached models or login-only are in use. Without it, you can end up on another provider's model with nothing saying why. Michael's lean."
+
+Decided: the extension shows one warning per session when the catalog fetch fails or the catalog arrives after startup, naming the URL and whether cached models or the login-only provider are in use.

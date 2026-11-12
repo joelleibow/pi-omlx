@@ -659,8 +659,8 @@ test("a cached start registers under omlx without choosing a model", async () =>
 	});
 });
 
-// owner-rulings §3: a second copy of the extension in one process runs like any
-// other pi extension, so a second load registers again instead of skipping.
+// A second copy of the extension in one process runs like any other pi
+// extension, so a second load registers again instead of skipping.
 test("a second load in one process registers again with no shutdown first", async () => {
 	storeCredential(storedOAuth(STORED_KEY));
 	writeCacheFixture(FIXTURE_API_ROOT, [cachedModel("cached-model")]);

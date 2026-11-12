@@ -379,8 +379,8 @@ test("fetchModels emits catalog debug events for local settings refinement", asy
 	}
 });
 
-// design decision 4: the applied event fires on a change the extension reads,
-// never on an entry that carries only keys the overlay has dropped.
+// The applied event fires on a change the extension reads, never on an entry
+// that carries only keys the overlay has dropped.
 test("an overlay entry carrying only unread keys emits no applied event", () => {
 	const dir = mkdtempSync(join(inject("isolationRoot"), "pi-omlx-"));
 	const settingsPath = join(dir, "model_settings.json");

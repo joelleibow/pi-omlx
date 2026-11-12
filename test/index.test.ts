@@ -249,7 +249,9 @@ interface CacheFixture {
 
 // CACHE_FILE is captured at import (src/catalog.ts:567), so the file the
 // extension reads and writes is the isolation root's, whatever
-// PI_CODING_AGENT_DIR points at while a test runs.
+// PI_CODING_AGENT_DIR points at while a test runs. The production write mkdirs
+// the agent directory it resolves at call time, which is not this one, so a
+// test that expects that write to land creates this directory itself.
 function cacheFixturePath(): string {
 	return join(inject("isolationRoot"), "agent", "cache", "omlx-models.json");
 }
@@ -272,7 +274,9 @@ function readCacheFixture(): CacheFixture | undefined {
 }
 
 function removeCacheFixture(): void {
-	rmSync(cacheFixturePath(), { force: true });
+	const path = cacheFixturePath();
+	mkdirSync(dirname(path), { recursive: true });
+	rmSync(path, { force: true });
 }
 
 // A cached model with real limits, under whatever id a test needs: the ids

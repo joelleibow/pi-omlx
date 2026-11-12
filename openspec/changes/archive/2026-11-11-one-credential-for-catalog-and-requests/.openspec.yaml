@@ -5,11 +5,12 @@ x-marbleization:
   runs:
     chidi: "9b2a609f-4bb6-41be-8439-b22a80edb8ca"
     eleanor: "d3735769-3d22-4207-97a7-da35919c38a6"
-    michael: "a87ff90c-6f79-48a4-848e-2d17607cd646"
-    derek: "bf73bdb9-29b2-42d8-b437-2b7e53679759"
+    michael: "7242bbab-60be-4fd4-8fb2-6d32baf7224e"
+    derek: "4c267b60-9715-48a8-9c33-21f4f8c6849d"
     bambadjan: "14395eea-5fea-4887-ad32-f5f6929810a3"
   gates:
     council_owner: approved
     design: approved
     tasks: approved
     implement: approved
+    validate: approved

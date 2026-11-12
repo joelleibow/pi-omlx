@@ -37,7 +37,8 @@ The same diagram is stored on its own in `docs/architecture/omlx-connections.mer
 - **Entry point.** Registers the provider with Pi at startup, starts the catalog poll, and wires the stream wrapper. It holds the extension's runtime state and decides when to fetch, when to register and when to fall back to a login-only provider.
 - **Credential resolution.** One rule that turns the stored credential and the environment into the base URL, the API key and which side the value came from, for the catalog fetch and the registration together. Keyless is not in its answer: the registration derives it from an empty key and then registers no key at all. See `docs/adr/0001-one-credential-decides-the-omlx-connection.md`.
 - **Catalog.** Fetches the model list over HTTP, caches it under Pi's agent directory, and merges the optional metadata overlay before anything is registered.
-- **Provider registration.** Translates a resolution and a model list into the provider definition Pi consumes, including the login prompts Pi shows.
+- **Provider registration.** Turns the resolved base URL, the environment-variable name the key is read from, and a model list into the provider definition Pi consumes.
+- **Login prompts.** The `/login` flow: asks for the server URL and the key, triggers the fetch and registration before Pi stores the credential, and returns the credential Pi keeps. The entry point attaches these prompts to the provider it registers.
 - **Stream wrapper.** Forwards chat completions to the OMLX server, applies the first-delta timeout, and normalizes failures into assistant errors.
 
 ## 4. Data Stores

@@ -275,6 +275,12 @@ function removeCacheFixture(): void {
 	rmSync(cacheFixturePath(), { force: true });
 }
 
+// A cached model with real limits, under whatever id a test needs: the ids
+// differ so that only the test's own registration or write can satisfy it.
+function cachedModel(id: string): OmlxModel {
+	return { id, contextWindow: 32768, maxTokens: 4096 };
+}
+
 // Drains the microtasks the poll's first tick runs — the session's only startup
 // request — so the call log is stable and the ten-minute sleep is already
 // scheduled on the fake clock.
@@ -606,9 +612,7 @@ test("a stored credential without a base URL fetches from the default", async ()
 // can let the body run is the factory resolving on its own.
 test("a request that never answers does not delay a session with cached models", async () => {
 	storeCredential(storedOAuth(STORED_KEY));
-	writeCacheFixture(FIXTURE_API_ROOT, [
-		{ id: "cached-model", contextWindow: 32768, maxTokens: 4096 },
-	]);
+	writeCacheFixture(FIXTURE_API_ROOT, [cachedModel("cached-model")]);
 	await driveExtension(
 		{},
 		async ({ fetches, lastRegistered }) => {
@@ -662,9 +666,7 @@ test("a late catalog registers under omlx and moves no model", async () => {
 // Requirement 2, boundary case: a cached start registers under omlx as well.
 test("a cached start registers under omlx without choosing a model", async () => {
 	storeCredential(storedOAuth(STORED_KEY));
-	writeCacheFixture(FIXTURE_API_ROOT, [
-		{ id: "cached-model", contextWindow: 32768, maxTokens: 4096 },
-	]);
+	writeCacheFixture(FIXTURE_API_ROOT, [cachedModel("cached-model")]);
 	await driveExtension({}, async ({ calls, setModels }) => {
 		assert.deepEqual(setModels, []);
 		// The startup registration is the first one; the poll's tick registers the
@@ -718,8 +720,8 @@ test("a successful request registers the fetched models and writes the cache", a
 test("a failed load with cached models warns once with the URL and the count", async () => {
 	storeCredential(storedOAuth(STORED_KEY));
 	writeCacheFixture(FIXTURE_API_ROOT, [
-		{ id: "cached-a", contextWindow: 32768, maxTokens: 4096 },
-		{ id: "cached-b", contextWindow: 16384, maxTokens: 2048 },
+		cachedModel("cached-a"),
+		cachedModel("cached-b"),
 	]);
 	await driveExtension(
 		{},
@@ -774,9 +776,7 @@ test("a 200 with nothing registrable warns once and writes no cache", async () =
 
 test("a failure before the session starts warns once it does", async () => {
 	storeCredential(storedOAuth(STORED_KEY));
-	writeCacheFixture(FIXTURE_API_ROOT, [
-		{ id: "cached-a", contextWindow: 32768, maxTokens: 4096 },
-	]);
+	writeCacheFixture(FIXTURE_API_ROOT, [cachedModel("cached-a")]);
 	await driveExtension(
 		{},
 		async ({ notifies, startSession }) => {
@@ -790,9 +790,7 @@ test("a failure before the session starts warns once it does", async () => {
 
 test("a later success adds no second warning", async () => {
 	storeCredential(storedOAuth(STORED_KEY));
-	writeCacheFixture(FIXTURE_API_ROOT, [
-		{ id: "cached-a", contextWindow: 32768, maxTokens: 4096 },
-	]);
+	writeCacheFixture(FIXTURE_API_ROOT, [cachedModel("cached-a")]);
 	let failing = true;
 	await driveExtension(
 		{},
@@ -829,9 +827,7 @@ test("a late catalog warns once for a session that started login-only", async ()
 
 test("a warm cache whose catalog arrives normally warns about nothing", async () => {
 	storeCredential(storedOAuth(STORED_KEY));
-	writeCacheFixture(FIXTURE_API_ROOT, [
-		{ id: "cached-a", contextWindow: 32768, maxTokens: 4096 },
-	]);
+	writeCacheFixture(FIXTURE_API_ROOT, [cachedModel("cached-a")]);
 	await driveExtension({}, async ({ notifies, startSession }) => {
 		startSession();
 		assert.deepEqual(notifies, []);
@@ -939,9 +935,7 @@ test("a json-mode session with no UI records the warning and writes no stderr", 
 // Requirement 4: a fetch that outlives its session changes nothing.
 test("a fetch that resolves after shutdown leaves the cache alone", async () => {
 	storeCredential(storedOAuth(STORED_KEY));
-	writeCacheFixture(FIXTURE_API_ROOT, [
-		{ id: "cached-before", contextWindow: 1024, maxTokens: 512 },
-	]);
+	writeCacheFixture(FIXTURE_API_ROOT, [cachedModel("cached-before")]);
 	const before = readCacheFixture();
 	const held = heldResponse();
 	await driveExtension(
@@ -959,9 +953,7 @@ test("a fetch that resolves after shutdown leaves the cache alone", async () => 
 
 test("a stale fetch that fails outright writes nothing either", async () => {
 	storeCredential(storedOAuth(STORED_KEY));
-	writeCacheFixture(FIXTURE_API_ROOT, [
-		{ id: "cached-before", contextWindow: 1024, maxTokens: 512 },
-	]);
+	writeCacheFixture(FIXTURE_API_ROOT, [cachedModel("cached-before")]);
 	const before = readCacheFixture();
 	const held = heldResponse();
 	await driveExtension(

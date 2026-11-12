@@ -7,7 +7,7 @@ pi-omlx is a Pi extension: it discovers the models an OMLX server offers and reg
 ```
 .            the extension's entry point: registers the provider, runs the catalog poll, wires the stream wrapper
 src/         every other module: credential resolution, catalog fetch and cache, provider registration, the stream wrapper, login prompts, debug tracing
-test/        the suite, one file per module
+test/        the suite, one file per module; test/isolation/ holds the harness that isolates a run
 docs/        user documentation; docs/adr/ holds decisions, docs/architecture/ holds diagrams
 openspec/    change records: living specs under specs/, in-flight changes under changes/, finished ones under changes/archive/
 ```
@@ -66,7 +66,9 @@ Installed into Pi from git with `pi install git:github.com/joelleibow/pi-omlx`. 
 
 ## 8. Development & Testing
 
-The suite is vitest, gated by Biome and a type check. Setup, triage and the live probes are described in [CONTRIBUTING.md](./CONTRIBUTING.md); the commands an agent runs, and the agent directory every run must point at, are in [AGENTS.md](./AGENTS.md). `PI_OMLX_DEBUG` turns on the extension's trace lines.
+The suite is vitest, gated by Biome and a type check. Setup, triage and the live probes are described in [CONTRIBUTING.md](./CONTRIBUTING.md); the commands an agent runs are in [AGENTS.md](./AGENTS.md). `PI_OMLX_DEBUG` turns on the extension's trace lines.
+
+The suite isolates itself on every run. A global setup in `test/isolation/` creates a per-run root under the system temporary directory, points `HOME` and `PI_CODING_AGENT_DIR` into it, clears the extension's own environment keys, and removes the root when the run ends. A setup file in the same directory keeps a `.env` beside `index.ts` out of the run, and fails the run when the agent directory, the home directory or the overlay path resolves outside the root. A bare run therefore leaves the operator's agent directory and overlay alone.
 
 ## 9. Future Considerations
 

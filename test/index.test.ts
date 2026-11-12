@@ -894,3 +894,34 @@ test("the notice decision traces under PI_OMLX_DEBUG and is silent without it", 
 		catalogRefusedResponse,
 	);
 });
+
+// pi's UI is a no-op where it provides none; the extension does not guard on
+// hasUI, so the notice still reaches the ui it was handed, and stderr carries
+// nothing beyond what the diagnostics spec allows.
+test("a print-mode session with no UI records the warning and writes no stderr", async () => {
+	storeCredential(storedOAuth(STORED_KEY));
+	removeCacheFixture();
+	await driveExtension(
+		{},
+		async ({ notifies, startSession, stderr }) => {
+			startSession({ hasUI: false, mode: "print" });
+			assert.equal(notifies.length, 1);
+			assert.deepEqual(stderr(), []);
+		},
+		catalogRefusedResponse,
+	);
+});
+
+test("a json-mode session with no UI records the warning and writes no stderr", async () => {
+	storeCredential(storedOAuth(STORED_KEY));
+	removeCacheFixture();
+	await driveExtension(
+		{},
+		async ({ notifies, startSession, stderr }) => {
+			startSession({ hasUI: false, mode: "json" });
+			assert.equal(notifies.length, 1);
+			assert.deepEqual(stderr(), []);
+		},
+		catalogRefusedResponse,
+	);
+});

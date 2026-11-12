@@ -1,5 +1,11 @@
 import { strict as assert } from "node:assert";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { inject, test } from "vitest";
 import {
@@ -7,6 +13,7 @@ import {
 	fetchModels,
 	parseModelsResponse,
 	parseModelsStatusResponse,
+	readCatalogCache,
 	resolveArchContextLimits,
 	writeCatalogCache,
 } from "../src/catalog.ts";
@@ -611,6 +618,42 @@ test("a cache write after the agent directory changes lands under the new direct
 			"omlx-models.json",
 		);
 		if (existsSync(loadTime)) assert.notEqual(readApiRoot(loadTime), apiRoot);
+	} finally {
+		if (savedAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = savedAgentDir;
+	}
+});
+
+// catalog-discovery: a read follows the agent directory in force when it runs.
+// B holds a cache and C holds none, so a read that reports B's models under B
+// and nothing under C can only be following the directory in force. The test
+// seeds nothing under <root>/agent, which the /login test writes (council S2).
+test("a cache read follows the agent directory in force when it runs", () => {
+	const apiRoot = "https://cache-read-path-test.invalid/v1";
+	const dirB = mkdtempSync(
+		join(inject("isolationRoot"), "pi-omlx-cache-read-b-"),
+	);
+	const dirC = mkdtempSync(
+		join(inject("isolationRoot"), "pi-omlx-cache-read-c-"),
+	);
+	mkdirSync(join(dirB, "cache"), { recursive: true });
+	writeFileSync(
+		join(dirB, "cache", "omlx-models.json"),
+		JSON.stringify({
+			apiRoot,
+			models: [{ id: "b-model", contextWindow: 8192, maxTokens: 1024 }],
+			savedAt: Date.now(),
+		}),
+	);
+	const savedAgentDir = process.env.PI_CODING_AGENT_DIR;
+	try {
+		process.env.PI_CODING_AGENT_DIR = dirB;
+		assert.deepEqual(
+			readCatalogCache(apiRoot)?.map((model) => model.id),
+			["b-model"],
+		);
+		process.env.PI_CODING_AGENT_DIR = dirC;
+		assert.equal(readCatalogCache(apiRoot), undefined);
 	} finally {
 		if (savedAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 		else process.env.PI_CODING_AGENT_DIR = savedAgentDir;

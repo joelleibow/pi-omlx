@@ -17,6 +17,7 @@ import { beforeEach, inject, test, vi } from "vitest";
 import extension from "../index.ts";
 import { PROVIDER_KEY } from "../src/auth-storage.ts";
 import type { OmlxModel } from "../src/catalog.ts";
+import { DEFAULT_OMLX_BASE_URL } from "../src/config.ts";
 
 function callbacksReturning(...values: string[]) {
 	const queue = [...values];
@@ -95,10 +96,6 @@ test("/login with an API key registers authenticated OMLX models", async () => {
 		handlers.get("session_shutdown")?.();
 	}
 });
-
-// Imported here rather than with the imports above so the lines the living
-// verification spec cites (72, 76) keep naming the fixture they point at.
-import { DEFAULT_OMLX_BASE_URL } from "../src/config.ts";
 
 // The wiring tests take the credential route this change asks for: a stored
 // `auth.json` under the test's own PI_CODING_AGENT_DIR. `dir` is that

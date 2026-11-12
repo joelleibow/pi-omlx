@@ -46,7 +46,7 @@ Every task is committed separately. A task that checks the shape of its diff mea
   - Boundary cases: none.
   - Traces to: design step 1, decision 9; Michael §3(i).
 
-- [ ] 2.2 Move the import at `test/index.test.ts:99-101` into the import block and delete the comment above it. Verify: `npm run check` green, with Biome's organizer accepting the placement.
+- [x] 2.2 Move the import at `test/index.test.ts:99-101` into the import block and delete the comment above it. Verify: `npm run check` green, with Biome's organizer accepting the placement.
 
   - Red evidence: `rg -n ':72|:76' openspec/specs` returns no match, so the lines the comment cites do not exist and the comment's premise is already false (council.md #11).
   - Green evidence: the import appears once, in the block; `test/index.test.ts` green.

@@ -114,7 +114,7 @@ Every task is committed separately. A task that checks the shape of its diff mea
   - Shape check: `git diff --stat HEAD~1` at this task's commit names only `index.ts` and `test/index.test.ts`.
   - Traces to: design step 9, decision 11; `specs/test-isolation` (the added scenario); owner-rulings §3; council.md #8.
 
-- [ ] 5.2 Clear the old-token grep's one surviving hit and confirm the grep passes. Verify: `git grep -ni picker -- ':!*.md' ':!openspec'` prints nothing and exits 1, which is `package-identity`'s requirement.
+- [x] 5.2 Clear the old-token grep's one surviving hit and confirm the grep passes. Verify: `git grep -ni picker -- ':!*.md' ':!openspec'` prints nothing and exits 1, which is `package-identity`'s requirement.
 
   - Red evidence: at HEAD the grep prints `test/index.test.ts:634`, a comment reading "registered for the picker", and exits 0. That hit predates this change, added by PR #10, so the living requirement is already violated. The hit is in a test file, not Markdown, so the docs pass does not own it.
   - Green evidence: the comment is reworded to "registered for pi's model list", and the grep prints nothing and exits 1. No assertion and no behaviour changes.

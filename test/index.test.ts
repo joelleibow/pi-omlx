@@ -626,8 +626,8 @@ function neverAnswered(): Promise<Response> {
 	return new Promise<Response>(() => {});
 }
 
-// Requirement 2: the arrived models are registered for the picker and pi's own
-// choice of starting model is left alone.
+// Requirement 2: the arrived models are registered for pi's model list and
+// pi's own choice of starting model is left alone.
 test("a late catalog registers under omlx and moves no model", async () => {
 	storeCredential(storedOAuth(STORED_KEY));
 	await driveExtension({}, async ({ calls, setModels }) => {

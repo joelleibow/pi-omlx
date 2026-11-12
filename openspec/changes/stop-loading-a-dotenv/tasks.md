@@ -29,7 +29,7 @@ entry point, and the isolation guard's thrown message is untouched.
 
 ## 2. The read comes out
 
-- [ ] 2.1 Fails first: add a test to `test/index.test.ts` that makes a directory with
+- [x] 2.1 Fails first: add a test to `test/index.test.ts` that makes a directory with
   `mkdtempSync(join(inject("isolationRoot"), "extension-copy-"))`, copies `index.ts` and `src/` into
   it recursively so `src/` keeps its tree, symlinks `<repo>/node_modules` into it, and writes a
   `.env` holding `OMLX_BASE_URL=http://from-dotenv.invalid/v1` and `OMLX_API_KEY=from-dotenv`. The

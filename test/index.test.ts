@@ -1,12 +1,19 @@
 import { strict as assert } from "node:assert";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+	cpSync,
+	mkdtempSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import type {
 	ExtensionAPI,
 	ProviderConfig,
 } from "@earendil-works/pi-coding-agent";
-import { afterEach, beforeEach, test, vi } from "vitest";
+import { afterEach, beforeEach, inject, test, vi } from "vitest";
 import extension, { EXTENSION_SINGLETON_KEY } from "../index.ts";
 import { _setAuthPathForTesting, PROVIDER_KEY } from "../src/auth-storage.ts";
 
@@ -455,6 +462,40 @@ test("the environment supplies both halves when nothing is stored", async () => 
 			assert.equal(lastRegistered()?.apiKey, "$OMLX_API_KEY");
 			assert.equal(lastRegistered()?.authHeader, true);
 		},
+	);
+});
+
+// shortcut: proves a `.env` beside the entry module configures nothing. A read
+// from the working directory, or of another filename, would stay green; upgrade
+// this test if a configuration-file reader is proposed.
+test("a .env beside a copy of index.ts configures nothing", async () => {
+	const repoRoot = fileURLToPath(new URL("..", import.meta.url));
+	const copyDir = mkdtempSync(join(inject("isolationRoot"), "extension-copy-"));
+	cpSync(join(repoRoot, "index.ts"), join(copyDir, "index.ts"));
+	cpSync(join(repoRoot, "src"), join(copyDir, "src"), { recursive: true });
+	symlinkSync(join(repoRoot, "node_modules"), join(copyDir, "node_modules"));
+	writeFileSync(
+		join(copyDir, ".env"),
+		"OMLX_BASE_URL=http://from-dotenv.invalid/v1\nOMLX_API_KEY=from-dotenv\n",
+	);
+
+	await driveExtension(
+		{},
+		async ({ fetches, lastRegistered }) => {
+			assert.equal(process.env.OMLX_API_KEY, undefined);
+			assert.equal(process.env.OMLX_BASE_URL, undefined);
+			assert.deepEqual(fetches, []);
+			assert.equal(lastRegistered()?.baseUrl, undefined);
+			assert.equal(lastRegistered()?.apiKey, undefined);
+			assert.equal(lastRegistered()?.models, undefined);
+		},
+		undefined,
+		async () =>
+			(
+				await import(
+					/* @vite-ignore */ pathToFileURL(join(copyDir, "index.ts")).href
+				)
+			).default,
 	);
 });
 

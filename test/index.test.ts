@@ -273,6 +273,7 @@ interface DriveContext {
 	notifies: NotifyCall[];
 	setModels: unknown[];
 	lastRegistered: () => ProviderConfig | undefined;
+	load: () => Promise<void>;
 	startSession: (shape?: SessionShape) => void;
 	shutdown: () => void;
 	stderr: () => string[];
@@ -311,6 +312,7 @@ async function driveExtension(
 			notifies: fake.notifies,
 			setModels: fake.setModels,
 			lastRegistered: fake.lastRegistered,
+			load: () => entry(fake.pi),
 			startSession: fake.startSession,
 			shutdown: fake.shutdown,
 			stderr: () => [
@@ -655,6 +657,29 @@ test("a cached start registers under omlx without choosing a model", async () =>
 			["cached-model"],
 		);
 	});
+});
+
+// owner-rulings §3: a second copy of the extension in one process runs like any
+// other pi extension, so a second load registers again instead of skipping.
+test("a second load in one process registers again with no shutdown first", async () => {
+	storeCredential(storedOAuth(STORED_KEY));
+	writeCacheFixture(FIXTURE_API_ROOT, [cachedModel("cached-model")]);
+	await driveExtension(
+		{},
+		async ({ calls, load }) => {
+			const registrations = () =>
+				calls.filter((call) => call.kind === "register");
+			assert.equal(registrations().length, 1);
+			await load();
+			assert.deepEqual(
+				registrations().map((call) =>
+					call.config?.models?.map((model) => model.id),
+				),
+				[["cached-model"], ["cached-model"]],
+			);
+		},
+		neverAnswered,
+	);
 });
 
 // Requirement 1, third scenario. The response's model id appears in no other

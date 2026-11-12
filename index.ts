@@ -28,7 +28,6 @@ import { toProviderConfig } from "./src/provider.ts";
 import { applyOmlxThinkingControls } from "./src/thinking.ts";
 
 const PROVIDER = PROVIDER_KEY;
-const EXTENSION_SINGLETON_KEY = Symbol.for("pi-omlx/loaded");
 
 const CATALOG_TIMEOUT_MS = 2_000;
 const POLL_INTERVAL_MS = 10 * 60 * 1000;
@@ -47,10 +46,6 @@ interface State {
 }
 
 export default async function (pi: ExtensionAPI): Promise<void> {
-	const globalState = globalThis as Record<PropertyKey, unknown>;
-	if (globalState[EXTENSION_SINGLETON_KEY]) return;
-	globalState[EXTENSION_SINGLETON_KEY] = true;
-
 	const state: State = {
 		catalog: [],
 		registered: false,
@@ -124,7 +119,6 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 
 	pi.on("session_shutdown", () => {
 		state.stopped = true;
-		delete globalState[EXTENSION_SINGLETON_KEY];
 	});
 }
 

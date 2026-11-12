@@ -105,7 +105,7 @@ Every task is committed separately. A task that checks the shape of its diff mea
 
 ## 5. Behaviour: The Singleton Guard
 
-- [ ] 5.1 (a) Write a test that loads the extension twice in one process with no `session_shutdown` between the loads and asserts two registrations; (b) delete the early-return guard, the `EXTENSION_SINGLETON_KEY` constant and the `delete globalState[EXTENSION_SINGLETON_KEY]` line, leaving `state.stopped = true` in the handler. Verify: the test red at HEAD and green after; `npm run check` green.
+- [x] 5.1 (a) Write a test that loads the extension twice in one process with no `session_shutdown` between the loads and asserts two registrations; (b) delete the early-return guard, the `EXTENSION_SINGLETON_KEY` constant and the `delete globalState[EXTENSION_SINGLETON_KEY]` line, leaving `state.stopped = true` in the handler. Verify: the test red at HEAD and green after; `npm run check` green.
 
   - Red evidence: the test fails before the deletion because the second factory call returns early (`index.ts:52-53` at HEAD); record the failure line.
   - Green evidence: the test passes; `rg -n 'EXTENSION_SINGLETON_KEY|pi-omlx/loaded' index.ts src test scripts` returns no match; every other test's expectation is unchanged.

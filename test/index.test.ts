@@ -925,3 +925,59 @@ test("a json-mode session with no UI records the warning and writes no stderr", 
 		catalogRefusedResponse,
 	);
 });
+
+// Requirement 4: a fetch that outlives its session changes nothing.
+test("a fetch that resolves after shutdown leaves the cache alone", async () => {
+	storeCredential(storedOAuth(STORED_KEY));
+	writeCacheFixture(FIXTURE_API_ROOT, [
+		{ id: "cached-before", contextWindow: 1024, maxTokens: 512 },
+	]);
+	const before = readCacheFixture();
+	const held = heldResponse();
+	await driveExtension(
+		{},
+		async ({ fetches, shutdown }) => {
+			assert.equal(fetches.length, 1);
+			shutdown();
+			held.answer(jsonResponse(FIXTURE_MODELS));
+			await settle();
+			assert.deepEqual(readCacheFixture(), before);
+		},
+		held.respond,
+	);
+});
+
+test("a stale fetch that fails outright writes nothing either", async () => {
+	storeCredential(storedOAuth(STORED_KEY));
+	writeCacheFixture(FIXTURE_API_ROOT, [
+		{ id: "cached-before", contextWindow: 1024, maxTokens: 512 },
+	]);
+	const before = readCacheFixture();
+	const held = heldResponse();
+	await driveExtension(
+		{},
+		async ({ fetches, shutdown }) => {
+			assert.equal(fetches.length, 1);
+			shutdown();
+			held.answer(catalogRefusedResponse());
+			await settle();
+			assert.deepEqual(readCacheFixture(), before);
+		},
+		held.respond,
+	);
+});
+
+// A response a test holds open and answers when it chooses.
+function heldResponse(): {
+	respond: () => Promise<Response>;
+	answer: (response: Response) => void;
+} {
+	let resolve!: (response: Response) => void;
+	return {
+		respond: () =>
+			new Promise<Response>((answerHeld) => {
+				resolve = answerHeld;
+			}),
+		answer: (response: Response) => resolve(response),
+	};
+}

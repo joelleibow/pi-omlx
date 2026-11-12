@@ -335,6 +335,10 @@ async function fetchAndRegister(
 		return "failed";
 	}
 
+	// The session ended while this fetch was in flight: its catalog belongs to
+	// no session, and writing it would overwrite the cache the next one reads.
+	if (state.stopped) return "failed";
+
 	const missingLimitIds = missingLimitModelIds(models);
 	const registrable = models.filter(isRegistrableModel);
 

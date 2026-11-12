@@ -75,7 +75,7 @@ entry point, and the isolation guard's thrown message is untouched.
 
 ## 4. The pointers outside the suite
 
-- [ ] 4.1 Structure step: delete `.env.example`, whose instruction to copy it to a `.env` describes a
+- [x] 4.1 Structure step: delete `.env.example`, whose instruction to copy it to a `.env` describes a
   read this change removed (design D1, and the card's second acceptance criterion for the file
   half). Verify: `test ! -e .env.example` exits 0; `git grep -nE '"\.env"|/\.env|^\.env' --
   ':!*.md' ':!openspec/'` returns exactly three lines, `.gitignore:2` and `.npmignore:31` which

@@ -67,7 +67,7 @@ entry point, and the isolation guard's thrown message is untouched.
   green; `npm run check` green, which is also what catches a leftover unused import. Proves
   `test-isolation` "A missing isolation fails the run" still holds with the mock gone.
 
-- [ ] 3.2 Structure step: drop the `.env.example` citation from the comment above
+- [x] 3.2 Structure step: drop the `.env.example` citation from the comment above
   `CALLER_ENV_KEYS` in `test/isolation/global-setup.ts`, leaving the five keys untouched (design
   D10). Verify: `rg -n 'env\.example' test/` returns no match; `rg -n
   'OMLX_API_KEY|OMLX_BASE_URL|OMLX_MODEL_SETTINGS_PATH|OMLX_STREAM_FIRST_DELTA_TIMEOUT_MS|PI_OMLX_DEBUG'

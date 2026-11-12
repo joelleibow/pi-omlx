@@ -96,6 +96,10 @@ test("/login with an API key registers authenticated OMLX models", async () => {
 	}
 });
 
+// Imported here rather than with the imports above so the lines the living
+// verification spec cites (72, 76) keep naming the fixture they point at.
+import { DEFAULT_OMLX_BASE_URL } from "../src/config.ts";
+
 // The wiring tests take the credential route this change asks for: a stored
 // `auth.json` under the test's own PI_CODING_AGENT_DIR. `dir` is the temp
 // directory the file-level hook points the read at, so the same file is the
@@ -144,7 +148,7 @@ interface FetchCall {
 	authorization: string | undefined;
 }
 
-function recordCatalogFetches(): FetchCall[] {
+function recordCatalogFetches(respond: () => Response): FetchCall[] {
 	const fetches: FetchCall[] = [];
 	globalThis.fetch = (async (
 		url: string | URL | Request,
@@ -152,9 +156,19 @@ function recordCatalogFetches(): FetchCall[] {
 	) => {
 		const headers = init?.headers as Record<string, string> | undefined;
 		fetches.push({ url: String(url), authorization: headers?.Authorization });
-		return jsonResponse(FIXTURE_MODELS);
+		return respond();
 	}) as typeof fetch;
 	return fetches;
+}
+
+function catalogRefusedResponse(): Response {
+	return {
+		ok: false,
+		status: 503,
+		statusText: "Service Unavailable",
+		json: async () => ({}),
+		text: async () => "unavailable",
+	} as Response;
 }
 
 interface ProviderCall {
@@ -203,10 +217,11 @@ interface DriveContext {
 async function driveExtension(
 	env: TestEnv,
 	body: (context: DriveContext) => Promise<void>,
+	respond: () => Response = () => jsonResponse(FIXTURE_MODELS),
 ): Promise<void> {
 	const restoreEnv = withEnv({ ...env, PI_CODING_AGENT_DIR: dir });
 	const originalFetch = globalThis.fetch;
-	const fetches = recordCatalogFetches();
+	const fetches = recordCatalogFetches(respond);
 	const fake = fakePi();
 	const write = vi
 		.spyOn(process.stderr, "write")
@@ -422,4 +437,33 @@ test("a login-only registration writes no provider_registered line", async () =>
 			[],
 		);
 	});
+});
+
+test("the environment supplies both halves when nothing is stored", async () => {
+	await driveExtension(
+		{ OMLX_API_KEY: ENV_KEY, OMLX_BASE_URL: FIXTURE_BASE_URL },
+		async ({ fetches, lastRegistered }) => {
+			assert.equal(fetches[0]?.url, `${FIXTURE_API_ROOT}/models/status`);
+			assert.equal(fetches[0]?.authorization, `Bearer ${ENV_KEY}`);
+			assert.equal(lastRegistered()?.baseUrl, FIXTURE_API_ROOT);
+			assert.equal(lastRegistered()?.apiKey, "$OMLX_API_KEY");
+			assert.equal(lastRegistered()?.authHeader, true);
+		},
+	);
+});
+
+test("a stored credential without a base URL fetches from the default", async () => {
+	storeCredential({ type: "api_key", key: STORED_KEY });
+	await driveExtension(
+		{ OMLX_BASE_URL: OTHER_API_ROOT },
+		async ({ fetches, lastRegistered }) => {
+			assert.equal(fetches[0]?.url, `${DEFAULT_OMLX_BASE_URL}/models/status`);
+			assert.equal(fetches[0]?.authorization, `Bearer ${STORED_KEY}`);
+			// The server refuses this catalog, so nothing is cached at the default
+			// URL and the provider stays login-only.
+			assert.equal(lastRegistered()?.baseUrl, undefined);
+			assert.equal(lastRegistered()?.models, undefined);
+		},
+		catalogRefusedResponse,
+	);
 });

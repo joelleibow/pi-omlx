@@ -11,10 +11,26 @@ export interface OmlxStoredCredential {
 type OmlxApiKeyCredential = ApiKeyCredential & { baseUrl?: string };
 type OmlxOAuthCredential = OAuthCredential & { baseUrl?: string };
 
+/**
+ * The stored `omlx` credential exactly as auth.json presents it: pi's record
+ * plus the `baseUrl` this extension's login wrote. Nothing here is filtered or
+ * validated; the resolver judges what a present record means.
+ */
+export interface OmlxCredentialRecord {
+	type: string;
+	baseUrl?: string;
+	key?: string;
+	access?: string;
+}
+
 let authPathOverrideForTesting: string | undefined;
 
 export function _setAuthPathForTesting(path: string | undefined): void {
 	authPathOverrideForTesting = path;
+}
+
+export function readOmlxCredential(): OmlxCredentialRecord | undefined {
+	return readStoredCredential(PROVIDER_KEY, authPathOverrideForTesting);
 }
 
 export function loadOmlxCredential(): OmlxStoredCredential | undefined {

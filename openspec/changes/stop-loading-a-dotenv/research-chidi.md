@@ -112,3 +112,52 @@ Identical to the original table; no row changes and the conclusions about the sc
 **Agreement with Michael's measurement.** Yes, in substance: with HEAD's `files` allow-list, a root `.env` is not packed, with or without the `.npmignore` `.env*` line. That matches my scratch result "files only" and the HEAD-exact run. The file count differs (my 20 vs his 19); unresolved, and not material to the `.env` question.
 
 **Corrected statements.** (1) The sentence about the repo's own dry-run is replaced by the HEAD-exact result above. (2) All other findings in this report are unchanged. (3) The `.npmignore` `.env*` and `.gitignore` `.env` lines do not change what npm packs for a root `.env` under the current `files`; `.gitignore` still governs `git add`, and neither protects a nested `src/.env`.
+
+## Addendum 3
+
+**Question.** In vitest 5.1.0 / vite 8.3.8 with the repo's `vitest.config.ts` (`environment: "node"`, isolation `globalSetup` + `setupFiles`), does a test that copies `index.ts` and `src/` to a dir under `os.tmpdir()`, symlinks `node_modules`, writes a `.env` setting `OMLX_BASE_URL`, then `await import(pathToFileURL(join(tempDir,"index.ts")).href)`, actually load the copy and (at HEAD, loader present) leave the key in `process.env`? And with the loader removed from the copy, is the key absent?
+
+**Setup (measurement, run in scratch, not the repo).** `git archive HEAD | tar -x -C <repo>/.pi/marbleization/stop-loading-a-dotenv/scratch-chidi/head`, then `ln -s /Users/joelleibow/Projects/pi-omlx/node_modules node_modules` there. Probe file `scratch-chidi/head/test/probe.test.ts` (kept in scratch). Each run used the archive's own `vitest.config.ts` (`include: test/**/*.test.ts`, `globalSetup`, `setupFiles`; the worker-setup `node:fs` mock hides only `<archive>/.env`, not the temp copy's). The test:
+- `makeCopy()`: `mkdtempSync(join(realpathSync(tmpdir()),"probe-ext-"))`; copies `index.ts`, `src/` (recursive), **and `package.json`**; symlinks `node_modules`; writes `.env` = `OMLX_BASE_URL="http://from-dotenv.invalid/v1"`. With `PROBE_STRIP=1` it also deletes `src/dotenv.ts` and drops from the copy's `index.ts` every line containing `dotenv` or `loadDotenvFromExtensionDir` (the import line and the call).
+- Test 1 (in-process): `await import(pathToFileURL(join(dir,"index.ts")).href)` (with `/* @vite-ignore */`), logs `process.env.OMLX_BASE_URL` before and after, and whether the imported default function's source contains `__vi_import`/`__vite_ssr` (vite SSR-transform markers).
+- Test 2 (`execFileSync`): writes `run.mts` in the copy (`await import("./index.ts"); console.log("KEY=" + process.env.OMLX_BASE_URL)`), runs `node_modules/.bin/tsx run.mts` with `cwd` = the copy and `OMLX_BASE_URL` removed from the child's env.
+- Logging goes through `appendFileSync` to a file because vitest hid `console.log` in my runs.
+
+**Commands** (each with cwd = the archive copy):
+```
+./node_modules/.bin/vitest run test/probe.test.ts                  # HEAD, loader present
+PROBE_STRIP=1 ./node_modules/.bin/vitest run test/probe.test.ts    # loader removed from the copy
+```
+
+**Output.**
+```
+=== loader present (HEAD)
+ Test Files  1 passed (1)   Tests  2 passed (2)
+DIR /private/var/folders/.../T/probe-ext-JopyVj STRIP false before
+fn-src-has-vite-ssr: true | src: async function(pi) { const globalState = globalThis; if (globalState[EXTENSION_SINGLETON...
+IMPORTED default: function after http://from-dotenv.invalid/v1
+TSX KEY=http://from-dotenv.invalid/v1
+
+=== loader removed (PROBE_STRIP=1)
+ Test Files  1 passed (1)   Tests  2 passed (2)
+DIR /private/var/folders/.../T/probe-ext-wOOu0n STRIP true before
+IMPORTED default: function after
+TSX KEY=undefined
+```
+(The `fn-src-has-vite-ssr` line was added in a later run of the loader-present case; the stripped-case run predates that line but is otherwise the same test. `before` is empty in all runs because the isolation `globalSetup` deletes `OMLX_BASE_URL` and the other `CALLER_ENV_KEYS`.)
+
+**Answers.**
+1. **Yes, the in-process import loads the copy and vite transforms it.** The imported default export loaded (`typeof` = function) and its source contains vite's SSR transform markers (`fn-src-has-vite-ssr: true`). With the loader present, `process.env.OMLX_BASE_URL` was empty before and `http://from-dotenv.invalid/v1` after, so the loader ran from the temp dir and the `.env` beside the copy's `index.ts` set the key in the vitest worker's `process.env`. Note it persists in that worker unless the test deletes it (my probe deleted it afterwards).
+2. **With `src/dotenv.ts` and the loader lines removed from the copy, the same test sees the key absent** (`after` empty), the import still succeeds, and the default export is a function.
+3. **`tsx` subprocess agrees:** `KEY=http://from-dotenv.invalid/v1` with the loader, `KEY=undefined` without.
+4. **Caveat found:** the copy must include `package.json` (`"type": "module"`) for the `tsx` variant. Without it tsx treats the temp `index.ts` as CJS and fails with `ERR_PACKAGE_PATH_NOT_EXPORTED` for `@earendil-works/pi-coding-agent` (its `exports` has only an `import` condition). An earlier attempt with `tsx -e` also failed: `-e` is CJS ("Top-level await is currently not supported with the cjs output format"), so I used a `.mts` file. The in-process import did not need `package.json`.
+5. The `node:fs` mock in `worker-setup.ts` (hides `<repo>/.env` only) did not interfere with the temp copy, as expected from its path comparison.
+
+**Cleanup.** Removed all `probe-ext-*` temp dirs under `$TMPDIR`; scratch left in `.pi/marbleization/stop-loading-a-dotenv/scratch-chidi/`. Nothing else written except this report.
+
+**`git -C /Users/joelleibow/Projects/pi-omlx status --short` at the end:**
+```
+ M openspec/changes/stop-loading-a-dotenv/research-eleanor.md
+?? .pi/
+```
+The brief expected only `?? .pi/`. The modified `research-eleanor.md` is not mine (I wrote nothing in the repo outside `.pi/`); presumably Eleanor's concurrent addendum work.

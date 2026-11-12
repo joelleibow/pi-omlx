@@ -813,6 +813,27 @@ test("a later success adds no second warning", async () => {
 	);
 });
 
+// Requirement 3's once-per-session rule, which the text rule above cannot show:
+// a login-only start fails again on the next tick, and the session starts twice
+// because RPC emits session_start twice on one instance, yet it is told once.
+test("a login-only session warns once, however often it starts or fails again", async () => {
+	storeCredential(storedOAuth(STORED_KEY));
+	removeCacheFixture();
+	await driveExtension(
+		{},
+		async ({ notifies, startSession }) => {
+			startSession();
+			startSession();
+			assert.equal(notifies.length, 1, "the second session_start warned again");
+			await vi.advanceTimersByTimeAsync(BACKOFF_BASE_MS);
+			assert.equal(notifies.length, 1, "a second failed load warned again");
+			startSession();
+			assert.equal(notifies.length, 1, "a later session_start warned again");
+		},
+		catalogRefusedResponse,
+	);
+});
+
 // Requirement 3, the late row: only a session that started login-only is told
 // about models that arrived afterwards.
 test("a late catalog warns once for a session that started login-only", async () => {

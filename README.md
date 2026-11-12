@@ -34,7 +34,7 @@ pi install git:github.com/joelleibow/pi-omlx
 3. Enter your OMLX server's base URL, such as `http://localhost:8000`, then its API key. Leave the key empty for a keyless server.
 4. Type `/model` to see and select your OMLX models.
 
-The default base URL is `http://127.0.0.1:8000/v1`. Set `OMLX_BASE_URL` before starting Pi if your OMLX server uses a different URL.
+The default base URL is `http://127.0.0.1:8000/v1`. A saved login decides the base URL and the API key. `OMLX_BASE_URL` and `OMLX_API_KEY` apply only when nothing is saved, and the URL variable does nothing without the key beside it. A keyless server is reached the way step 3 describes, by leaving the key empty; setting `OMLX_BASE_URL` alone is unsupported.
 
 
 ## ⚙️ Configuration

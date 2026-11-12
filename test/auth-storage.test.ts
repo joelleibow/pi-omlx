@@ -5,24 +5,22 @@ import { join } from "node:path";
 import { afterEach, beforeEach, test } from "vitest";
 import {
 	_setAuthPathForTesting,
-	loadOmlxCredential,
 	PROVIDER_KEY,
+	readOmlxCredential,
 } from "../src/auth-storage.ts";
 
 let dir: string;
-let authPath: string;
-
-function writeAuth(data: Record<string, unknown>): void {
-	writeFileSync(authPath, JSON.stringify(data, null, 2));
-}
+let savedAgentDir: string | undefined;
 
 beforeEach(() => {
 	dir = mkdtempSync(join(tmpdir(), "pi-omlx-auth-"));
-	authPath = join(dir, "auth.json");
-	_setAuthPathForTesting(authPath);
+	savedAgentDir = process.env.PI_CODING_AGENT_DIR;
+	_setAuthPathForTesting(join(dir, "auth.json"));
 });
 afterEach(() => {
 	_setAuthPathForTesting(undefined);
+	if (savedAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+	else process.env.PI_CODING_AGENT_DIR = savedAgentDir;
 	rmSync(dir, { recursive: true, force: true });
 });
 
@@ -30,68 +28,53 @@ test("PROVIDER_KEY is omlx", () => {
 	assert.equal(PROVIDER_KEY, "omlx");
 });
 
-test("loadOmlxCredential returns undefined when nothing is stored", () => {
-	assert.equal(loadOmlxCredential(), undefined);
+// The read under PROVIDER_KEY returns the record unfiltered: the resolver, not
+// this function, decides what a present credential means. Each case writes the
+// file the seam installed in beforeEach points at, and points its own
+// PI_CODING_AGENT_DIR at the same directory, so the record is the one the
+// production path resolves too.
+function storeUnderAgentDir(auth: Record<string, unknown>): void {
+	process.env.PI_CODING_AGENT_DIR = dir;
+	writeFileSync(join(dir, "auth.json"), JSON.stringify(auth, null, 2));
+}
+
+test("readOmlxCredential returns a stored api_key record with an empty key", () => {
+	storeUnderAgentDir({ [PROVIDER_KEY]: { type: "api_key", key: "" } });
+	assert.deepEqual(readOmlxCredential(), { type: "api_key", key: "" });
 });
 
-test("load ignores a credential keyed by the package name", () => {
-	writeAuth({ "pi-omlx": { type: "api_key", key: "package-name-key" } });
-	assert.equal(loadOmlxCredential(), undefined);
-});
-
-test("load reads normal /login api-key credential without base URL", () => {
-	writeAuth({ [PROVIDER_KEY]: { type: "api_key", key: "omlx-key" } });
-	assert.deepEqual(loadOmlxCredential(), {
-		baseUrl: undefined,
-		apiKey: "omlx-key",
-	});
-});
-
-test("load reads legacy oauth-shaped OMLX credential", () => {
-	writeAuth({
+test("readOmlxCredential returns a stored oauth record with its baseUrl and access", () => {
+	storeUnderAgentDir({
 		[PROVIDER_KEY]: {
 			type: "oauth",
-			access: "omlx-key",
-			refresh: "omlx-key",
-			expires: Date.now() + 1000,
-			baseUrl: "https://omlx.example.com/v1",
-		},
-	});
-	assert.deepEqual(loadOmlxCredential(), {
-		baseUrl: "https://omlx.example.com/v1",
-		apiKey: "omlx-key",
-	});
-});
-
-test("load reads keyless oauth-shaped credential (baseUrl only, empty access)", () => {
-	writeAuth({
-		[PROVIDER_KEY]: {
-			type: "oauth",
-			access: "",
+			access: "stored-key",
 			refresh: "",
-			expires: Number.POSITIVE_INFINITY,
+			expires: 42,
 			baseUrl: "https://omlx.example.com/v1",
 		},
 	});
-	assert.deepEqual(loadOmlxCredential(), {
+	assert.deepEqual(readOmlxCredential(), {
+		type: "oauth",
+		access: "stored-key",
+		refresh: "",
+		expires: 42,
 		baseUrl: "https://omlx.example.com/v1",
-		apiKey: "",
 	});
 });
 
-test("load ignores sibling provider entries", () => {
-	writeAuth({
+test("readOmlxCredential returns undefined when no omlx entry is stored", () => {
+	storeUnderAgentDir({
 		anthropic: { type: "oauth", access: "x", refresh: "r", expires: 0 },
-		[PROVIDER_KEY]: { type: "api_key", key: "k" },
 	});
-	assert.deepEqual(loadOmlxCredential(), { baseUrl: undefined, apiKey: "k" });
+	assert.equal(readOmlxCredential(), undefined);
 });
 
-test("load returns undefined when auth.json does not exist", () => {
-	assert.equal(loadOmlxCredential(), undefined);
+test("readOmlxCredential returns a record of an unknown type as-is", () => {
+	storeUnderAgentDir({ [PROVIDER_KEY]: { type: "mystery", key: "k" } });
+	assert.deepEqual(readOmlxCredential(), { type: "mystery", key: "k" });
 });
 
-test("load ignores entries missing key", () => {
-	writeAuth({ [PROVIDER_KEY]: { type: "api_key", key: "" } });
-	assert.equal(loadOmlxCredential(), undefined);
+test("readOmlxCredential returns undefined when auth.json does not exist", () => {
+	process.env.PI_CODING_AGENT_DIR = dir;
+	assert.equal(readOmlxCredential(), undefined);
 });

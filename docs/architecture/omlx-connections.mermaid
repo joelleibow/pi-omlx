@@ -1,0 +1,13 @@
+---
+title: How Pi, pi-omlx and the OMLX server connect
+---
+flowchart LR
+    operator([Operator]) -->|runs /login, /model, /logout| pi["Pi (host)"]
+    pi -->|loads the extension and calls its hooks| ext["pi-omlx"]
+    ext -->|reads the omlx credential, never writes it| auth[("Pi agent directory: auth.json")]
+    pi -->|resolves the credential for each request| auth
+    ext -->|registers the provider and its models| pi
+    ext -->|fetches the model list| omlx["OMLX server (external)"]
+    ext -->|writes the catalog cache| cache[("Pi agent directory: cache/")]
+    pi -->|opens a chat stream through the extension| ext
+    ext -->|streams the completion| omlx

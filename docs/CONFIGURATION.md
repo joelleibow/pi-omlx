@@ -1,6 +1,6 @@
 # Configuration
 
-The normal path is Pi's built-in login: run `/login omlx` (or `/login`, then **Sign in with an account**, then **OMLX**), enter the base URL and API key, then select an OMLX model with `/model`. The rest of this page documents the base URL override, the optional model metadata overlay, and the stream timeout knob.
+The normal path is Pi's built-in login: run `/login omlx` (or `/login`, then **Sign in with an account**, then **OMLX**), enter the base URL and API key, then select an OMLX model with `/model`. The rest of this page documents the environment variables that apply when nothing is saved, the optional model metadata overlay, and the stream timeout knob.
 
 ## Where credentials live
 
@@ -8,21 +8,24 @@ The normal path is Pi's built-in login: run `/login omlx` (or `/login`, then **S
 
 `pi uninstall git:github.com/joelleibow/pi-omlx` does not touch `auth.json`. Reinstall picks up where you left off; use `/logout` or delete the `omlx` entry yourself to scrub.
 
-## Environment variable overrides
+## Environment variables when nothing is saved
 
-Use `OMLX_BASE_URL` when your OMLX server is not at the default URL:
+A saved login decides the base URL and the API key, for the model list and for chat alike. `OMLX_BASE_URL` and `OMLX_API_KEY` apply only when nothing is saved: CI, a fresh shell, a project you have not logged in to. To use a key in one shell while a login is saved, run `/logout` first.
 
-```sh
-export OMLX_BASE_URL="http://127.0.0.1:8000/v1"
-```
-
-The default base URL is `http://127.0.0.1:8000/v1`.
-
-`OMLX_API_KEY` can also override the stored `/login` key for CI, ephemeral shells, or per-project overrides:
+With nothing saved, the two variables supply both halves:
 
 ```sh
+export OMLX_BASE_URL="http://10.0.0.5:8000/v1"
 export OMLX_API_KEY="omlx-..."
 ```
+
+`OMLX_API_KEY` alone uses the default base URL, `http://127.0.0.1:8000/v1`. `OMLX_BASE_URL` alone configures nothing: with no API key and no saved login, the provider stays login-only and no model list is fetched.
+
+### Keyless servers
+
+Reach a server that needs no API key with `/login`: enter its base URL and leave the key empty. That works whatever `OMLX_API_KEY` is set to in your shell, because the empty key belongs to the saved login rather than to the environment.
+
+A keyless server addressed by `OMLX_BASE_URL` alone, with no login, is unsupported. Pi has nothing stored to authenticate with, treats the provider as not configured, and chat does not work.
 
 ## Model metadata overlay
 

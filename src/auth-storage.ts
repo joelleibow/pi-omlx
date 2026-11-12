@@ -1,15 +1,18 @@
-import type { ApiKeyCredential, OAuthCredential } from "@earendil-works/pi-ai";
 import { readStoredCredential } from "@earendil-works/pi-coding-agent";
 
 export const PROVIDER_KEY = "omlx";
 
-export interface OmlxStoredCredential {
+/**
+ * The stored `omlx` credential exactly as auth.json presents it: pi's record
+ * plus the `baseUrl` this extension's login wrote. Nothing here is filtered or
+ * validated; the resolver judges what a present record means.
+ */
+export interface OmlxCredentialRecord {
+	type: string;
 	baseUrl?: string;
-	apiKey: string;
+	key?: string;
+	access?: string;
 }
-
-type OmlxApiKeyCredential = ApiKeyCredential & { baseUrl?: string };
-type OmlxOAuthCredential = OAuthCredential & { baseUrl?: string };
 
 let authPathOverrideForTesting: string | undefined;
 
@@ -17,21 +20,10 @@ export function _setAuthPathForTesting(path: string | undefined): void {
 	authPathOverrideForTesting = path;
 }
 
-export function loadOmlxCredential(): OmlxStoredCredential | undefined {
-	const cred = readStoredCredential(PROVIDER_KEY, authPathOverrideForTesting) as
-		| OmlxApiKeyCredential
-		| OmlxOAuthCredential
-		| undefined;
-	if (!cred) return undefined;
-	if (cred.type === "api_key") {
-		if (!cred.key) return undefined;
-		return { baseUrl: cred.baseUrl, apiKey: cred.key };
-	}
-	if (cred.type === "oauth") {
-		// access may be legitimately empty for a keyless OMLX server
-		// (skip_api_key_verification) — baseUrl alone still counts as configured.
-		if (!cred.access && !cred.baseUrl) return undefined;
-		return { baseUrl: cred.baseUrl, apiKey: cred.access ?? "" };
-	}
-	return undefined;
+export function readOmlxCredential(): OmlxCredentialRecord | undefined {
+	// Defaults to <agent dir>/auth.json, resolved per call (research-chidi §3:
+	// auth-storage.js:425-433; getAgentDir reads PI_CODING_AGENT_DIR per call,
+	// michael-orientation trap i: config.js:510-516). The path argument is the
+	// existing test seam, honoured only when a test sets one.
+	return readStoredCredential(PROVIDER_KEY, authPathOverrideForTesting);
 }

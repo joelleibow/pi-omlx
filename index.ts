@@ -30,7 +30,7 @@ import { applyOmlxThinkingControls } from "./src/thinking.ts";
 const PROVIDER = PROVIDER_KEY;
 export const EXTENSION_SINGLETON_KEY = Symbol.for("pi-omlx/loaded");
 
-const STARTUP_TIMEOUT_MS = 2_000;
+const CATALOG_TIMEOUT_MS = 2_000;
 const POLL_INTERVAL_MS = 10 * 60 * 1000;
 const BACKOFF_BASE_MS = 2_000;
 const BACKOFF_MAX_MS = 60_000;
@@ -146,7 +146,7 @@ async function startPolling(
 
 	while (!state.stopped) {
 		const { result, apiRoot } = await refreshProvider(pi, state, {
-			timeoutMs: STARTUP_TIMEOUT_MS,
+			timeoutMs: CATALOG_TIMEOUT_MS,
 		});
 		// The session ended while this refresh was in flight; its fallback would
 		// register and warn on a dead instance.

@@ -28,7 +28,7 @@ Structure groups 1 and 5 have no red step, because there is no failing test to w
 
 ## 5. Structure: the rename, and Joel's live check
 
-- [ ] 5.1 Rename `STARTUP_TIMEOUT_MS` to `CATALOG_TIMEOUT_MS`, leaving the 2-second value alone (design D8). Verification: a search for the old name returns no line; every line matching the new name sits in `index.ts` and names the request timeout; `npm run check` exits 0 before and after the rename, with no test changed. Boundary cases: none.
+- [x] 5.1 Rename `STARTUP_TIMEOUT_MS` to `CATALOG_TIMEOUT_MS`, leaving the 2-second value alone (design D8). Verification: a search for the old name returns no line; every line matching the new name sits in `index.ts` and names the request timeout; `npm run check` exits 0 before and after the rename, with no test changed. Boundary cases: none.
 - [ ] 5.2 Joel's live check, which only he can observe and the conductor ticks with his words: with a warm cache and an oMLX URL that accepts a connection and never answers, his session starts without a wait, and a session with the cache removed starts, shows one warning naming the URL and the login-only provider, and lets him switch with `/model`. Marked as his; no writer ticks it.
 
 Documentation is the docs pass's work after the implementation gate, so it is not listed here.

@@ -96,9 +96,9 @@ Deleting the old function adds no scope: once decision 3 rewires its callers, no
 | Poll (`index.ts:92-122`) | re-runs `refreshProvider` | unchanged mechanics; `refreshProvider` does the resolving |
 | `refreshProvider` (`index.ts:247-260`) | `loadConfig()` and `resolveConfiguredApiKey()`, then a target test | one resolution; not configured → its not-configured return; configured → `fetchAndRegister(resolution)` |
 | `fetchAndRegister` (`index.ts:268-304`) | `(config, apiKey)` | `(resolution)` from the configured branch: `fetchModels(resolution.apiRoot, resolution.apiKey)`, then cache and register through `registerModels` |
-| Login callback, `buildOmlxOauth` (`index.ts:138-154`, `src/oauth-login.ts:32-62`) | passed `explicitApiKey`, and `registerModels` re-reads ambient state | builds `{type:"oauth", access: typedKey, baseUrl: typedUrl}` and passes it as the stored credential, then `fetchAndRegister(resolution)` |
+| Login callback, `buildOmlxOauth` (`index.ts:138-154`, `src/oauth-login.ts:32-62`) | passed `explicitApiKey`, and `registerModels` re-reads ambient state | builds the configured resolution itself, `{configured:true, apiRoot: typedUrl, apiKey: typedKey, source: STORED}`, and hands it to `fetchAndRegister` |
 
-The login callback's pass-through is what removes trap (f): the values the user typed are the stored credential for that one call, so neither the store nor the environment is consulted. The credential the callback returns is what pi persists (`research-chidi` §4); the spec asserts that return value, not pi's storage.
+The login callback is what removes trap (f), by construction rather than by a parameter: it builds the configured resolution from the values the user typed, so neither the store nor the environment is consulted. It builds the resolution as a literal instead of feeding a record to the resolver, because the resolver's union cannot say that an oauth record is always configured, and the alternatives were an unreachable branch or a cast; the prompt has already normalized the URL and refused a blank one, and keyless still comes from the empty key where the registration is built, so the behaviour matches. The credential the callback returns is what pi persists (`research-chidi` §4); the spec asserts that return value, not pi's storage.
 
 **Alternatives considered.**
 

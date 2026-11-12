@@ -14,8 +14,8 @@ import type {
 	ExtensionAPI,
 	ProviderConfig,
 } from "@earendil-works/pi-coding-agent";
-import { afterEach, beforeEach, inject, test, vi } from "vitest";
-import extension, { EXTENSION_SINGLETON_KEY } from "../index.ts";
+import { beforeEach, inject, test, vi } from "vitest";
+import extension from "../index.ts";
 import { PROVIDER_KEY } from "../src/auth-storage.ts";
 import type { OmlxModel } from "../src/catalog.ts";
 
@@ -43,11 +43,6 @@ let dir: string;
 
 beforeEach(() => {
 	dir = mkdtempSync(join(inject("isolationRoot"), "pi-omlx-index-"));
-	delete (globalThis as Record<PropertyKey, unknown>)[EXTENSION_SINGLETON_KEY];
-});
-
-afterEach(() => {
-	delete (globalThis as Record<PropertyKey, unknown>)[EXTENSION_SINGLETON_KEY];
 });
 
 test("/login with an API key registers authenticated OMLX models", async () => {

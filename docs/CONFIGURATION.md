@@ -66,14 +66,14 @@ Per-model schema:
       "max_context_window": 131072,
       "max_tokens": 16000,
       "enable_thinking": true,
-      "reasoning_parser": "qwen3",
+      "reasoning_parser": "qwen",
       "model_type_override": "vlm"
     }
   }
 }
 ```
 
-The extension reads those keys and ignores any other key in an entry. `model_type_override` does something only when it is `vlm`, which registers the model as taking images as well as text. `chat_template_kwargs.enable_thinking` is read as a fallback for `enable_thinking`.
+The extension reads those keys and ignores any other key in an entry. `model_type_override` does something only when it is `vlm`, which registers the model as taking images as well as text. `reasoning_parser` selects the chat-template thinking format for `qwen`, `qwen_3_coder`, `llama`, `harmony` and `deepseek_v4`, matched case-insensitively, and any other value falls back to the plain OpenAI format. `chat_template_kwargs.enable_thinking` is read as a fallback for `enable_thinking`.
 
 ## Stream timeout
 

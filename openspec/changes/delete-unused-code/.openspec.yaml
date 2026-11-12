@@ -5,9 +5,9 @@ x-marbleization:
   runs:
     chidi: "41cfb0f3-0baf-48c7-8dda-9d36a891813c"
     eleanor: "8a7e673a-9540-4ab0-8c59-d558324a57f2"
-    michael: "2e3c0dd0-af27-479b-be8f-18ff79872ea5"
-    bambadjan: "4883a97c-e57d-4cd9-ac7f-4338cec3874c"
-    derek: "488eb0c1-f5d4-4608-b249-a2be727bf073"
+    michael: "27c314f1-62f3-424d-b795-0965fc21c924"
+    bambadjan: "4c1873da-df08-46c9-b8d5-e9325b09317c"
+    derek: "bc64e428-5fdf-4548-9e7e-4b85ef082ce1"
     neil: "d358f552-9a8d-4cc6-9a12-a251359c8c38"
     matt: "c6b7e86b-d72c-4d95-bd8a-5e8c2e0ae51d"
   gates:
@@ -15,3 +15,4 @@ x-marbleization:
     design: approved
     tasks: approved
     implement: approved
+    validate: approved

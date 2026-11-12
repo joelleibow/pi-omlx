@@ -14,23 +14,14 @@ import { test, vi } from "vitest";
 // Inject a controlled inner stream so runAttempt/streamOmlxOpenAICompletions
 // can be exercised deterministically without a real OpenAI client. The wrapper
 // imports the concrete implementation module by specifier, so the mock must
-// target that exact module — which is also how we assert the P0 recursion fix
-// (the wrapper must call the concrete impl, not the compat dispatcher).
+// target that exact module.
 const innerStreamModule = vi.hoisted(() => {
-	let lastArgs:
-		| {
-				model: Model<"openai-completions">;
-				context: Context;
-				options: SimpleStreamOptions | undefined;
-		  }
-		| undefined;
 	// Each queued value is a FACTORY so a fresh event iterable is built on every
 	// streamSimple call (mirrors the real impl, which the wrapper may invoke
 	// repeatedly across reissue/timeout attempts).
 	let factory: () => AsyncIterable<AssistantMessageEvent> = () =>
 		arrayIterator([]);
 	return {
-		lastArgs: () => lastArgs,
 		queue(events: AssistantMessageEvent[]): void {
 			factory = () => arrayIterator(events);
 		},
@@ -38,11 +29,10 @@ const innerStreamModule = vi.hoisted(() => {
 			factory = fn;
 		},
 		streamSimple(
-			model: Model<"openai-completions">,
-			context: Context,
+			_model: Model<"openai-completions">,
+			_context: Context,
 			options: SimpleStreamOptions | undefined,
 		): AssistantMessageEventStream {
-			lastArgs = { model, context, options };
 			return makeMockStream(factory(), options?.signal);
 		},
 	};
@@ -117,11 +107,6 @@ const OMLX_MODEL: Model<"openai-completions"> = {
 	maxTokens: 8192,
 };
 
-const NON_OMLX_MODEL: Model<"openai-completions"> = {
-	...OMLX_MODEL,
-	provider: "zai",
-};
-
 const EMPTY_CONTEXT: TranscriptContext = normalizeContext({ messages: [] });
 
 function startEvent(partial: AssistantMessage): AssistantMessageEvent {
@@ -180,32 +165,6 @@ async function collect(
 	}
 	return out;
 }
-
-test("non-oMLX models pass straight through to the concrete implementation", async () => {
-	const partial = blankAssistant({
-		provider: "zai",
-		content: [{ type: "text", text: "hi" }],
-	});
-	innerStreamModule.queue([
-		startEvent(partial),
-		textDelta(partial, "hi"),
-		doneEvent(partial),
-	]);
-
-	const stream = streamOmlxOpenAICompletions(
-		NON_OMLX_MODEL,
-		EMPTY_CONTEXT,
-		undefined,
-		1_000,
-	);
-
-	const events = await collect(stream);
-	assert.equal(events[0].type, "start");
-	assert.equal(events.at(-1)?.type, "done");
-	// The concrete impl was invoked directly with the non-oMLX model.
-	const captured = innerStreamModule.lastArgs();
-	assert.equal(captured?.model.provider, "zai");
-});
 
 test("oMLX model streams body events and terminates on done", async () => {
 	const partial = blankAssistant();

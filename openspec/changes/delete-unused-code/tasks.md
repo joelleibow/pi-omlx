@@ -76,7 +76,7 @@ Every task is committed separately. A task that checks the shape of its diff mea
   - Boundary cases: the local `modelSettingsPath` binding, the `OMLX_MODEL_SETTINGS_PATH` default parameter and `resolveLocalModelSettingsPath` stay, because they are not state (Michael §2).
   - Traces to: design step 5, decision 8; Michael §3(g).
 
-- [ ] 3.4 Delete the non-omlx branch from `src/stream.ts` with `isOmlx`, the `stream_simple_bypassed` emit, the `PROVIDER_KEY` import, the test at `test/stream.test.ts:184-208` and the `NON_OMLX_MODEL` fixture at `test/stream.test.ts:120` only that test reads. Rewrite the recursion paragraph of the header comment to the per-provider fact with the `shortcut:` line, and delete the branch's own comment. Verify: `npm run check` green and both searches empty.
+- [x] 3.4 Delete the non-omlx branch from `src/stream.ts` with `isOmlx`, the `stream_simple_bypassed` emit, the `PROVIDER_KEY` import, the test at `test/stream.test.ts:184-208` and the `NON_OMLX_MODEL` fixture at `test/stream.test.ts:120` only that test reads. Rewrite the recursion paragraph of the header comment to the per-provider fact with the `shortcut:` line, and delete the branch's own comment. Verify: `npm run check` green and both searches empty.
 
   - Red evidence: `rg -n 'isOmlx|stream_simple_bypassed|NON_OMLX_MODEL' index.ts src test scripts` returns only the sites being deleted, so nothing else reads them. No failing test exists, because the branch cannot be entered on pi 1.5.2 (Chidi Q1, and Michael measured the shipped bundle's dispatch).
   - Green evidence: the same search returns no match; the suite green without the bypass test; the pinned stream tests for `omlx` models stay green, which is the boundary that still matters.

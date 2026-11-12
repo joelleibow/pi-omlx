@@ -16,7 +16,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, inject, test, vi } from "vitest";
 import extension, { EXTENSION_SINGLETON_KEY } from "../index.ts";
-import { _setAuthPathForTesting, PROVIDER_KEY } from "../src/auth-storage.ts";
+import { PROVIDER_KEY } from "../src/auth-storage.ts";
 import type { OmlxModel } from "../src/catalog.ts";
 
 function callbacksReturning(...values: string[]) {
@@ -43,12 +43,10 @@ let dir: string;
 
 beforeEach(() => {
 	dir = mkdtempSync(join(inject("isolationRoot"), "pi-omlx-index-"));
-	_setAuthPathForTesting(join(dir, "auth.json"));
 	delete (globalThis as Record<PropertyKey, unknown>)[EXTENSION_SINGLETON_KEY];
 });
 
 afterEach(() => {
-	_setAuthPathForTesting(undefined);
 	delete (globalThis as Record<PropertyKey, unknown>)[EXTENSION_SINGLETON_KEY];
 });
 
@@ -109,9 +107,9 @@ test("/login with an API key registers authenticated OMLX models", async () => {
 import { DEFAULT_OMLX_BASE_URL } from "../src/config.ts";
 
 // The wiring tests take the credential route this change asks for: a stored
-// `auth.json` under the test's own PI_CODING_AGENT_DIR. `dir` is the temp
-// directory the file-level hook points the read at, so the same file is the
-// one the production read resolves when it asks pi for the agent directory.
+// `auth.json` under the test's own PI_CODING_AGENT_DIR. `dir` is that
+// directory, which `driveExtension` points pi's agent directory at, so the
+// same file is the one the production read resolves.
 const FIXTURE_BASE_URL = "https://omlx.home.g33k.top";
 const FIXTURE_API_ROOT = `${FIXTURE_BASE_URL}/v1`;
 const OTHER_API_ROOT = "http://10.0.0.5:8000/v1";

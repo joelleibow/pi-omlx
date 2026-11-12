@@ -2,11 +2,7 @@ import { strict as assert } from "node:assert";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, inject, test } from "vitest";
-import {
-	_setAuthPathForTesting,
-	PROVIDER_KEY,
-	readOmlxCredential,
-} from "../src/auth-storage.ts";
+import { PROVIDER_KEY, readOmlxCredential } from "../src/auth-storage.ts";
 
 let dir: string;
 let savedAgentDir: string | undefined;
@@ -14,10 +10,8 @@ let savedAgentDir: string | undefined;
 beforeEach(() => {
 	dir = mkdtempSync(join(inject("isolationRoot"), "pi-omlx-auth-"));
 	savedAgentDir = process.env.PI_CODING_AGENT_DIR;
-	_setAuthPathForTesting(join(dir, "auth.json"));
 });
 afterEach(() => {
-	_setAuthPathForTesting(undefined);
 	if (savedAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 	else process.env.PI_CODING_AGENT_DIR = savedAgentDir;
 });
@@ -27,10 +21,9 @@ test("PROVIDER_KEY is omlx", () => {
 });
 
 // The read under PROVIDER_KEY returns the record unfiltered: the resolver, not
-// this function, decides what a present credential means. Each case writes the
-// file the seam installed in beforeEach points at, and points its own
-// PI_CODING_AGENT_DIR at the same directory, so the record is the one the
-// production path resolves too.
+// this function, decides what a present credential means. Each case writes its
+// record under the agent directory it points PI_CODING_AGENT_DIR at, so the
+// record is the one the production path resolves too.
 function storeUnderAgentDir(auth: Record<string, unknown>): void {
 	process.env.PI_CODING_AGENT_DIR = dir;
 	writeFileSync(join(dir, "auth.json"), JSON.stringify(auth, null, 2));

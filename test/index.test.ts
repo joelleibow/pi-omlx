@@ -1,13 +1,15 @@
 import { strict as assert } from "node:assert";
 import {
 	cpSync,
+	mkdirSync,
 	mkdtempSync,
+	readFileSync,
 	rmSync,
 	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type {
 	ExtensionAPI,
@@ -16,6 +18,7 @@ import type {
 import { afterEach, beforeEach, inject, test, vi } from "vitest";
 import extension, { EXTENSION_SINGLETON_KEY } from "../index.ts";
 import { _setAuthPathForTesting, PROVIDER_KEY } from "../src/auth-storage.ts";
+import type { OmlxModel } from "../src/catalog.ts";
 
 function callbacksReturning(...values: string[]) {
 	const queue = [...values];
@@ -155,7 +158,9 @@ interface FetchCall {
 	authorization: string | undefined;
 }
 
-function recordCatalogFetches(respond: () => Response): FetchCall[] {
+function recordCatalogFetches(
+	respond: () => Response | Promise<Response>,
+): FetchCall[] {
 	const fetches: FetchCall[] = [];
 	globalThis.fetch = (async (
 		url: string | URL | Request,
@@ -184,9 +189,26 @@ interface ProviderCall {
 	config?: ProviderConfig;
 }
 
+interface NotifyCall {
+	message: string;
+	type: string | undefined;
+}
+
+interface SessionShape {
+	hasUI: boolean;
+	mode: string;
+}
+
+type Handler = (event?: unknown, ctx?: unknown) => void;
+
 function fakePi() {
 	const calls: ProviderCall[] = [];
-	const handlers = new Map<string, () => void>();
+	const notifies: NotifyCall[] = [];
+	const setModels: unknown[] = [];
+	const handlers = new Map<string, Handler>();
+	const notify = (message: string, type?: string) => {
+		notifies.push({ message, type });
+	};
 	const pi = {
 		registerProvider: (provider: string, config: ProviderConfig) => {
 			calls.push({ kind: "register", provider, config });
@@ -194,18 +216,61 @@ function fakePi() {
 		unregisterProvider: (provider: string) => {
 			calls.push({ kind: "unregister", provider });
 		},
-		on: (event: string, handler: () => void) => {
+		on: (event: string, handler: Handler) => {
 			handlers.set(event, handler);
 		},
 		getThinkingLevel: () => "off",
+		setModel: (model: unknown) => {
+			setModels.push(model);
+			return true;
+		},
 	} as unknown as ExtensionAPI;
 	return {
 		pi,
 		calls,
+		notifies,
+		setModels,
 		lastRegistered: () =>
 			calls.filter((call) => call.kind === "register").at(-1)?.config,
+		startSession: (shape: SessionShape = { hasUI: true, mode: "rpc" }) => {
+			handlers.get("session_start")?.({}, { ...shape, ui: { notify } });
+		},
 		shutdown: () => handlers.get("session_shutdown")?.(),
 	};
+}
+
+interface CacheFixture {
+	apiRoot: string;
+	models: OmlxModel[];
+	savedAt: number;
+}
+
+// CACHE_FILE is captured at import (src/catalog.ts:567), so the file the
+// extension reads and writes is the isolation root's, whatever
+// PI_CODING_AGENT_DIR points at while a test runs.
+function cacheFixturePath(): string {
+	return join(inject("isolationRoot"), "agent", "cache", "omlx-models.json");
+}
+
+function writeCacheFixture(apiRoot: string, models: OmlxModel[]): void {
+	const path = cacheFixturePath();
+	mkdirSync(dirname(path), { recursive: true });
+	writeFileSync(
+		path,
+		JSON.stringify({ apiRoot, models, savedAt: Date.now() }, null, 2),
+	);
+}
+
+function readCacheFixture(): CacheFixture | undefined {
+	try {
+		return JSON.parse(readFileSync(cacheFixturePath(), "utf-8"));
+	} catch {
+		return undefined;
+	}
+}
+
+function removeCacheFixture(): void {
+	rmSync(cacheFixturePath(), { force: true });
 }
 
 // Drains the microtasks the poll's immediate first refresh runs, so the call
@@ -217,7 +282,11 @@ async function settle(): Promise<void> {
 interface DriveContext {
 	fetches: FetchCall[];
 	calls: ProviderCall[];
+	notifies: NotifyCall[];
+	setModels: unknown[];
 	lastRegistered: () => ProviderConfig | undefined;
+	startSession: (shape?: SessionShape) => void;
+	shutdown: () => void;
 	stderr: () => string[];
 }
 
@@ -226,7 +295,8 @@ type EntryFunction = (pi: ExtensionAPI) => Promise<void>;
 async function driveExtension(
 	env: TestEnv,
 	body: (context: DriveContext) => Promise<void>,
-	respond: () => Response = () => jsonResponse(FIXTURE_MODELS),
+	respond: () => Response | Promise<Response> = () =>
+		jsonResponse(FIXTURE_MODELS),
 	loadEntry: () => Promise<EntryFunction> = async () => extension,
 ): Promise<void> {
 	const restoreEnv = withEnv({ ...env, PI_CODING_AGENT_DIR: dir });
@@ -246,7 +316,11 @@ async function driveExtension(
 		await body({
 			fetches,
 			calls: fake.calls,
+			notifies: fake.notifies,
+			setModels: fake.setModels,
 			lastRegistered: fake.lastRegistered,
+			startSession: fake.startSession,
+			shutdown: fake.shutdown,
 			stderr: () => write.mock.calls.map(([chunk]) => String(chunk)),
 		});
 	} finally {

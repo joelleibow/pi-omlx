@@ -148,6 +148,9 @@ async function startPolling(
 		const { result, apiRoot } = await refreshProvider(pi, state, {
 			timeoutMs: STARTUP_TIMEOUT_MS,
 		});
+		// The session ended while this refresh was in flight; its fallback would
+		// register and warn on a dead instance.
+		if (state.stopped) break;
 
 		const registered = result === "registered";
 		if (registered) backoffMs = BACKOFF_BASE_MS;

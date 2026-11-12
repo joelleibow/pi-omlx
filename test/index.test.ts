@@ -967,17 +967,45 @@ test("a stale fetch that fails outright writes nothing either", async () => {
 	);
 });
 
-// A response a test holds open and answers when it chooses.
+// A response a test holds open and answers when it chooses. Every request the
+// extension makes after the answer gets the same response, so a fetch that fell
+// through from /models/status to /models still completes.
 function heldResponse(): {
 	respond: () => Promise<Response>;
 	answer: (response: Response) => void;
 } {
-	let resolve!: (response: Response) => void;
+	const waiting: Array<(response: Response) => void> = [];
+	let answered: Response | undefined;
 	return {
-		respond: () =>
-			new Promise<Response>((answerHeld) => {
-				resolve = answerHeld;
-			}),
-		answer: (response: Response) => resolve(response),
+		respond: () => {
+			if (answered) return Promise.resolve(answered);
+			return new Promise<Response>((resolve) => {
+				waiting.push(resolve);
+			});
+		},
+		answer: (response: Response) => {
+			answered = response;
+			for (const resolve of waiting.splice(0)) resolve(response);
+		},
 	};
 }
+
+test("a fetch that resolves after shutdown registers nothing and warns nobody", async () => {
+	storeCredential(storedOAuth(STORED_KEY));
+	removeCacheFixture();
+	const held = heldResponse();
+	await driveExtension(
+		{},
+		async ({ calls, fetches, notifies, shutdown, startSession }) => {
+			startSession();
+			assert.equal(fetches.length, 1);
+			const before = calls.length;
+			shutdown();
+			held.answer(jsonResponse(FIXTURE_MODELS));
+			await settle();
+			assert.equal(calls.length, before);
+			assert.deepEqual(notifies, []);
+		},
+		held.respond,
+	);
+});

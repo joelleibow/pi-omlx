@@ -137,7 +137,7 @@ The notice reaches the user only through `ctx.ui.notify`. pi's `noOpUIContext` i
 - `catalogNotice` gets its own test file, `test/notice.test.ts`, walking D4's table row by row, because the wording is policy and needs no session. The wiring's tests then assert that a notice reached `notify` once, not what it said.
 - "Does not wait" is proven with a fetch that never resolves under `vi.useFakeTimers()`, and the timers are never advanced.
 - `settle()`, the `fetches[0]` assumption and the poll test's request count are re-derived for a single startup tick, since the request they observe is now the poll's first.
-- The stderr spy `driveExtension` already restores is the observer for the trace: one test with `PI_OMLX_DEBUG` set asserts the `catalog_notice` line and the request's events, and the same scenario with the flag unset asserts an empty stderr.
+- The stderr and console spies `driveExtension` restores are the observer for the trace: one test with `PI_OMLX_DEBUG` set asserts the `catalog_notice` line and the request's events, and the same scenario with the flag unset asserts an empty stderr.
 
 ## Red And Green Steps
 

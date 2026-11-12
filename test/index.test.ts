@@ -122,8 +122,10 @@ const ENV_KEY = "env-key";
 const FIXTURE_MODELS = {
 	models: [{ id: "real-model", max_context_window: 32768, max_tokens: 4096 }],
 };
-// index.ts polls every ten minutes; the interval is not exported.
+// index.ts polls every ten minutes, and backs off from two seconds after a
+// failure; neither value is exported.
 const POLL_INTERVAL_MS = 10 * 60 * 1000;
+const BACKOFF_BASE_MS = 2_000;
 
 const ENV_KEYS = [
 	"PI_CODING_AGENT_DIR",
@@ -699,5 +701,102 @@ test("a successful request registers the fetched models and writes the cache", a
 					},
 				],
 			}),
+	);
+});
+
+// Requirement 3: at most one warning per session, through ctx.ui.notify.
+test("a failed load with cached models warns once with the URL and the count", async () => {
+	storeCredential(storedOAuth(STORED_KEY));
+	writeCacheFixture(FIXTURE_API_ROOT, [
+		{ id: "cached-a", contextWindow: 32768, maxTokens: 4096 },
+		{ id: "cached-b", contextWindow: 16384, maxTokens: 2048 },
+	]);
+	await driveExtension(
+		{},
+		async ({ notifies, startSession }) => {
+			startSession();
+			assert.deepEqual(notifies, [
+				{
+					message: `oMLX model list unavailable at ${FIXTURE_API_ROOT}; using 2 cached models.`,
+					type: "warning",
+				},
+			]);
+		},
+		catalogRefusedResponse,
+	);
+});
+
+test("a failed load with no cache warns once naming the login-only provider", async () => {
+	storeCredential(storedOAuth(STORED_KEY));
+	removeCacheFixture();
+	await driveExtension(
+		{},
+		async ({ notifies, startSession }) => {
+			startSession();
+			assert.deepEqual(notifies, [
+				{
+					message: `oMLX model list unavailable at ${FIXTURE_API_ROOT}; using the login-only provider.`,
+					type: "warning",
+				},
+			]);
+		},
+		catalogRefusedResponse,
+	);
+});
+
+test("a 200 with nothing registrable warns once and writes no cache", async () => {
+	storeCredential(storedOAuth(STORED_KEY));
+	removeCacheFixture();
+	await driveExtension(
+		{},
+		async ({ fetches, notifies, startSession }) => {
+			startSession();
+			assert.equal(fetches.length, 1);
+			assert.equal(notifies.length, 1);
+			assert.equal(readCacheFixture(), undefined);
+		},
+		() =>
+			jsonResponse({
+				models: [{ id: "no-limits", max_context_window: 0, max_tokens: 0 }],
+			}),
+	);
+});
+
+test("a failure before the session starts warns once it does", async () => {
+	storeCredential(storedOAuth(STORED_KEY));
+	writeCacheFixture(FIXTURE_API_ROOT, [
+		{ id: "cached-a", contextWindow: 32768, maxTokens: 4096 },
+	]);
+	await driveExtension(
+		{},
+		async ({ notifies, startSession }) => {
+			assert.deepEqual(notifies, []);
+			startSession();
+			assert.equal(notifies.length, 1);
+		},
+		catalogRefusedResponse,
+	);
+});
+
+test("a later success adds no second warning", async () => {
+	storeCredential(storedOAuth(STORED_KEY));
+	writeCacheFixture(FIXTURE_API_ROOT, [
+		{ id: "cached-a", contextWindow: 32768, maxTokens: 4096 },
+	]);
+	let failing = true;
+	await driveExtension(
+		{},
+		async ({ lastRegistered, notifies, startSession }) => {
+			startSession();
+			assert.equal(notifies.length, 1);
+			failing = false;
+			await vi.advanceTimersByTimeAsync(BACKOFF_BASE_MS);
+			assert.deepEqual(
+				lastRegistered()?.models?.map((model) => model.id),
+				["real-model"],
+			);
+			assert.equal(notifies.length, 1);
+		},
+		() => (failing ? catalogRefusedResponse() : jsonResponse(FIXTURE_MODELS)),
 	);
 });

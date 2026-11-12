@@ -1,4 +1,7 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type {
+	ExtensionAPI,
+	ExtensionUIContext,
+} from "@earendil-works/pi-coding-agent";
 import { PROVIDER_KEY, readOmlxCredential } from "./src/auth-storage.ts";
 import {
 	fetchModels,
@@ -14,7 +17,7 @@ import {
 	resolveOmlxCredential,
 } from "./src/config.ts";
 import { omlxDebug } from "./src/debug.ts";
-import type { RefreshResult } from "./src/notice.ts";
+import { catalogNotice, type RefreshResult } from "./src/notice.ts";
 import {
 	createLoginOmlx,
 	getOmlxApiKey,
@@ -38,6 +41,10 @@ interface State {
 	lastError: string | undefined;
 	lastRefreshAt: string | undefined;
 	modelSettingsPath: string | undefined;
+	startedLoginOnly: boolean;
+	pendingNotice: string | undefined;
+	warned: boolean;
+	ui: ExtensionUIContext | undefined;
 }
 
 export default async function (pi: ExtensionAPI): Promise<void> {
@@ -52,12 +59,35 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 		lastError: undefined,
 		lastRefreshAt: undefined,
 		modelSettingsPath: undefined,
+		startedLoginOnly: false,
+		pendingNotice: undefined,
+		warned: false,
+		ui: undefined,
+	};
+
+	// One warning per session: the first notice that has somewhere to go wins,
+	// and one that arrives before `session_start` waits there, so a session that
+	// started is told even when its first request failed in milliseconds.
+	const showOnce: ShowNotice = (notice) => {
+		if (!notice || state.warned) return;
+		if (!state.ui) {
+			state.pendingNotice ??= notice;
+			return;
+		}
+		state.warned = true;
+		state.pendingNotice = undefined;
+		state.ui.notify(notice, "warning");
 	};
 
 	registerCachedOrSetupModels(pi, state);
 
-	void startPolling(pi, state).catch((err) => {
+	void startPolling(pi, state, showOnce).catch((err) => {
 		state.lastError = err instanceof Error ? err.message : String(err);
+	});
+
+	pi.on("session_start", (_event, ctx) => {
+		state.ui = ctx.ui;
+		showOnce(state.pendingNotice);
 	});
 
 	pi.on("model_select", (event) => {
@@ -92,19 +122,36 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 	});
 }
 
-async function startPolling(pi: ExtensionAPI, state: State): Promise<void> {
+type ShowNotice = (notice: string | undefined) => void;
+
+async function startPolling(
+	pi: ExtensionAPI,
+	state: State,
+	showOnce: ShowNotice,
+): Promise<void> {
 	let backoffMs = BACKOFF_BASE_MS;
 
 	while (!state.stopped) {
-		const result = await refreshProvider(pi, state, {
+		const { result, apiRoot } = await refreshProvider(pi, state, {
 			timeoutMs: STARTUP_TIMEOUT_MS,
 		});
 
-		if (result === "registered") {
-			backoffMs = BACKOFF_BASE_MS;
+		const registered = result === "registered";
+		if (registered) backoffMs = BACKOFF_BASE_MS;
+		else registerCachedOrSetupModels(pi, state);
+		// After the fallback, so the count is the models the session holds now.
+		showOnce(
+			catalogNotice(
+				result,
+				state.startedLoginOnly,
+				apiRoot,
+				state.catalog.length,
+			),
+		);
+
+		if (registered) {
 			await sleep(POLL_INTERVAL_MS);
 		} else {
-			registerCachedOrSetupModels(pi, state);
 			await sleep(backoffMs);
 			backoffMs = Math.min(backoffMs * 2, BACKOFF_MAX_MS);
 		}
@@ -227,13 +274,16 @@ async function refreshProvider(
 	pi: ExtensionAPI,
 	state: State,
 	opts: { timeoutMs?: number } = {},
-): Promise<RefreshResult> {
+): Promise<{ result: RefreshResult; apiRoot: string | undefined }> {
 	const credential = resolveOmlxCredential(readOmlxCredential(), process.env);
 	if (!credential.configured) {
 		state.lastError = "OMLX credentials are not set";
-		return "not_configured";
+		return { result: "not_configured", apiRoot: undefined };
 	}
-	return fetchAndRegister(pi, state, credential, opts);
+	return {
+		result: await fetchAndRegister(pi, state, credential, opts),
+		apiRoot: credential.apiRoot,
+	};
 }
 
 /**

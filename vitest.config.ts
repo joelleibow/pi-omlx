@@ -6,5 +6,7 @@ export default defineConfig({
 		include: ["test/**/*.test.ts"],
 		clearMocks: true,
 		restoreMocks: true,
+		globalSetup: ["./test/isolation/global-setup.ts"],
+		setupFiles: ["./test/isolation/worker-setup.ts"],
 	},
 });

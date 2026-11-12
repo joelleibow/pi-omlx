@@ -86,3 +86,34 @@ Re-read `index.ts` and `test/index.test.ts`; checked line references with `rg -n
 - model filtering old `:120-134` → `:181-195`; sleep old `:286-290` → `:295-300`.
 
 Test references corrected/confirmed: setup hooks are `test/index.test.ts:35-51`; `settle` is `:213-215`; `driveExtension` begins `:226`; stored credential wiring test `:271-283`; no-credential test `:338-344`; poll test `:346-361`; keyless poll test `:401-414`; test poll constant `:123`. These line numbers were checked against the current file, not inferred from memory.
+
+## Eleanor — Addendum 3: startup lifecycle and provider refresh
+
+Bounded reconnaissance, with file:line for each code/spec claim. Paths below are repository-relative to `/Users/joelleibow/Projects/pi-omlx`.
+
+## 1. Factory singleton, state, and lifecycle events
+
+- `index.ts:42-45`: the default async factory reads a global symbol `EXTENSION_SINGLETON_KEY` (`:26`). If truthy, it immediately returns; otherwise it sets the symbol before creating state. A second factory invocation while the first extension instance is active therefore does not create another state, register providers, start another poll, or register event handlers (`:42-46`).
+- State fields are declared at `index.ts:33-40`, initialized at `:47-54`: `catalog: []`, `registered: false`, `stopped: false`, `lastError: undefined`, `lastRefreshAt: undefined`, `modelSettingsPath: undefined`. Successful provider registration updates catalog/registered/error/time/settings at `:168-172`; login-only/cache-miss setup clears catalog and registered, sets error/time, clears settings at `:214-221`. Refresh failures set `lastError` at `:238`, `:268`, or `:276-280`.
+- Factory registers `model_select` and `before_provider_request` handlers at `index.ts:66-90`; there is **no `session_start` handler** in this file. Those handlers trace model selection/request and apply thinking controls to OMLX requests (`:66-90`). Thus no behavior occurs here on `session_start`.
+- `session_shutdown` handler at `index.ts:92-95` sets that instance's `state.stopped = true` and deletes the global singleton key. The polling loop checks `!state.stopped` at `:101`; its `sleep` uses an unref'ed timer (`:295-300`). A subsequent factory invocation after shutdown can pass the guard and create a new instance. A second invocation before shutdown returns at the guard and does not attach to the existing instance.
+
+## 2. Refresh outcomes and cache writes
+
+- `RefreshResult` is exactly `"registered" | "not_configured" | "failed"` (`index.ts:229`). `refreshProvider` (`:231-242`) resolves the credential. If unconfigured it sets `lastError` and returns `not_configured` (`:236-240`); if configured, it returns the `fetchAndRegister` result (`:241`).
+- `fetchAndRegister` (`index.ts:251-286`) awaits `fetchModels` (`:261-267`). A thrown fetch/parse/timeout error sets its message in `state.lastError` and returns `failed` (`:267-270`). If the call yields zero registrable models, it sets a missing-limits or empty-catalog message and returns `failed` (`:272-281`). It filters registrable models by positive numeric contextWindow/maxTokens (`:181-188`). Only after at least one such model exists does it call `writeCatalogCache(credential.apiRoot, registrable)` (`:283`), then register models and return `registered` (`:284-285`). Thus cache writes are skipped for unconfigured credentials, any rejected/failed fetch, empty catalog, or catalog with no model meeting limits; write itself is best effort in `src/catalog.ts:596-603`.
+- The factory's `:60` re-registers cached/setup models after an initial result other than `registered` (`:57-60`): refresh may have failed or been unconfigured, so it restores eligible cached models if any, otherwise resets to login-only provider. `startPolling` has the corresponding `:110` branch after each failed/not-configured result (`:98-113`), re-applying current credential/cache state after refresh did not register new live models. `registerCachedOrSetupModels` resolves credential, reads exact-URL cache and decides cached model registration vs login-only (`:209-227`). These re-register calls do not fetch or write catalog cache themselves.
+
+## 3. Fake Pi and test teardown
+
+- `fakePi()` is `test/index.test.ts:187-209`. Its `pi.on(event, handler)` only stores callback in a `Map` (`:193-194`); provider calls are recorded, and `getThinkingLevel` returns `"off"` (`:190-201`). Its returned `shutdown()` invokes only the stored `session_shutdown` callback (`:207-208`). It does not synthesize `session_start`, nor provide `ctx` or `ctx.ui`; the handler map is typed as callbacks with no arguments (`:189`).
+- The separate simple fake in the first `/login` test also stores handlers, but only invokes `session_shutdown` on teardown (`test/index.test.ts:53-103`).
+- Test hooks clear global singleton before each test (`test/index.test.ts:41-46`) and after each test (`:47-52`); afterEach also resets the auth-path seam and removes the temporary directory. `driveExtension` calls `fake.shutdown()` during its `finally` and restores fake timers, stderr spy, fetch, and env (`:226-...`, check its continuation through the remainder of the function). This shutdown sets stopped/deletes singleton through production event callback; hooks additionally delete singleton directly for isolation.
+
+## 4. Diagnostics spec requirement
+
+`openspec/specs/diagnostics/spec.md:8-10` requires stderr tracing only when the current `PI_OMLX_DEBUG` predicate (`src/debug.ts:18`) holds; emitted lines must have `[pi-omlx]`, and the extension must neither read `PI_OMLX_PICKER_DEBUG` nor emit `[pi-omlx-picker]`. Scenarios at `:12-31` require no diagnostics when variable is unset, preserve existing predicate outcomes for empty string and `0`, and enforce the prefix/no-old-prefix. This spec speaks to stderr diagnostics, not user notifications or lifecycle handlers.
+
+## Boundary
+
+This report answers the Eleanor questions only. Chidi's pi 1.5.2 lifecycle, initial model selection, `ctx.ui.notify` mode behavior, and retained-context questions require his separate runtime research; no claim is made here about them.

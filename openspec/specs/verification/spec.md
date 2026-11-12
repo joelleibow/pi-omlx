@@ -1,7 +1,7 @@
 # verification Specification
 
 ## Purpose
-Defines three things about this repository: the `check` script in `package.json` passing, one installed `@earendil-works/pi-ai` at the version `@earendil-works/pi-coding-agent` pins, and the agent directory a verification run may touch.
+Defines three things about this repository: the `check` script in `package.json` passing, one installed `@earendil-works/pi-ai` at the version `@earendil-works/pi-coding-agent` pins, and the operator's agent directory a verification run leaves alone.
 
 ## Requirements
 
@@ -11,7 +11,7 @@ The `check` script in `package.json` SHALL exit 0 after `npm ci`, and the `@eare
 
 #### Scenario: The check exits zero
 
-- **WHEN** `PI_CODING_AGENT_DIR=<scratch directory> npm run check` runs in a working tree whose dependencies came from `npm ci`
+- **WHEN** `npm run check` runs in a working tree whose dependencies came from `npm ci`
 - **THEN** the command exits 0
 
 #### Scenario: The repository installs one pi-ai, the one pi pins
@@ -29,12 +29,18 @@ No tracked non-Markdown file SHALL carry `@ts-ignore`, `@ts-expect-error`, `@ts-
 - **WHEN** `git grep -nE '@ts-ignore|@ts-expect-error|@ts-nocheck|biome-ignore' -- ':!*.md'` runs from the repository root
 - **THEN** it returns no match
 
-### Requirement: Verification Runs Leave The Operator's Agent Directory Alone
+### Requirement: Verification Runs Need No Caller-Supplied Agent Directory
 
-When `PI_CODING_AGENT_DIR` names a directory outside `~/.pi/agent`, a run of `npm run check` or of any part of it SHALL NOT write `~/.pi/agent/cache/omlx-models.json`. The suite writes that file under the agent directory it resolves, so until it isolates itself, the variable is the isolation.
+A run of `npm run check`, `npm test` or `npx vitest run` SHALL leave the operator's pi agent directory as it found it, and a bare run SHALL be safe in any environment.
 
-#### Scenario: The run's write lands in the scratch directory
+#### Scenario: A bare run writes nothing into the operator's agent directory
 
-- **WHEN** `PI_CODING_AGENT_DIR=<scratch directory> npm run check` runs
-- **THEN** if `~/.pi/agent/cache/omlx-models.json` exists afterwards, it holds no `apiRoot` or model id the suite's fixtures register (`test/index.test.ts:72,76`)
-- **AND** `<scratch directory>/cache/omlx-models.json` holds that fixture `apiRoot` with a `savedAt` no earlier than the run started
+- **WHEN** `env -u PI_CODING_AGENT_DIR HOME=<empty directory> npx vitest run` runs
+- **THEN** the run exits 0
+- **AND** `<empty directory>/.pi` does not exist afterwards
+
+#### Scenario: A caller's agent directory is left as it was
+
+- **WHEN** `PI_CODING_AGENT_DIR=<populated directory> npm run check` runs
+- **THEN** the run exits 0
+- **AND** every file under `<populated directory>` holds the bytes it held before the run

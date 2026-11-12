@@ -273,8 +273,9 @@ function removeCacheFixture(): void {
 	rmSync(cacheFixturePath(), { force: true });
 }
 
-// Drains the microtasks the poll's immediate first refresh runs, so the call
-// log is stable and the ten-minute sleep is already scheduled on the fake clock.
+// Drains the microtasks the poll's first tick runs — the session's only startup
+// request — so the call log is stable and the ten-minute sleep is already
+// scheduled on the fake clock.
 async function settle(): Promise<void> {
 	for (let i = 0; i < 20; i++) await Promise.resolve();
 }
@@ -588,3 +589,43 @@ test("a stored credential without a base URL fetches from the default", async ()
 		catalogRefusedResponse,
 	);
 });
+
+// Requirement 1. Neither test advances the fake clock, so the only thing that
+// can let the body run is the factory resolving on its own.
+test("a request that never answers does not delay a session with cached models", async () => {
+	storeCredential(storedOAuth(STORED_KEY));
+	writeCacheFixture(FIXTURE_API_ROOT, [
+		{ id: "cached-model", contextWindow: 32768, maxTokens: 4096 },
+	]);
+	await driveExtension(
+		{},
+		async ({ fetches, lastRegistered }) => {
+			assert.equal(fetches.length, 1);
+			assert.equal(fetches[0]?.url, `${FIXTURE_API_ROOT}/models/status`);
+			assert.deepEqual(
+				lastRegistered()?.models?.map((model) => model.id),
+				["cached-model"],
+			);
+		},
+		neverAnswered,
+	);
+});
+
+test("a request that never answers does not delay a session with no cache", async () => {
+	storeCredential(storedOAuth(STORED_KEY));
+	removeCacheFixture();
+	await driveExtension(
+		{},
+		async ({ fetches, lastRegistered }) => {
+			assert.equal(fetches.length, 1);
+			assert.equal(fetches[0]?.url, `${FIXTURE_API_ROOT}/models/status`);
+			assert.equal(lastRegistered()?.baseUrl, undefined);
+			assert.equal(lastRegistered()?.models, undefined);
+		},
+		neverAnswered,
+	);
+});
+
+function neverAnswered(): Promise<Response> {
+	return new Promise<Response>(() => {});
+}

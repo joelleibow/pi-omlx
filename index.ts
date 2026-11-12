@@ -55,10 +55,6 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 	};
 
 	registerCachedOrSetupModels(pi, state);
-	const initialResult = await refreshProvider(pi, state, {
-		timeoutMs: STARTUP_TIMEOUT_MS,
-	});
-	if (initialResult !== "registered") registerCachedOrSetupModels(pi, state);
 
 	void startPolling(pi, state).catch((err) => {
 		state.lastError = err instanceof Error ? err.message : String(err);

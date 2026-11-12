@@ -14,6 +14,7 @@ import {
 	type ConfiguredOmlxCredential,
 	CREDENTIAL_SOURCE_STORED,
 	OMLX_API_KEY_ENV_VAR,
+	type OmlxCredentialResolution,
 	resolveOmlxCredential,
 } from "./src/config.ts";
 import { omlxDebug } from "./src/debug.ts";
@@ -79,7 +80,11 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 		state.ui.notify(notice, "warning");
 	};
 
-	registerCachedOrSetupModels(pi, state);
+	const credential = registerCachedOrSetupModels(pi, state);
+	// shortcut: a catalog that lands while a later extension's factory is still
+	// loading is still read as "late" here; reading ctx.model.provider in
+	// session_start would close that window, unverified.
+	state.startedLoginOnly = credential.configured && !state.registered;
 
 	void startPolling(pi, state, showOnce).catch((err) => {
 		state.lastError = err instanceof Error ? err.message : String(err);
@@ -250,7 +255,10 @@ function registerLoginOnlyProvider(pi: ExtensionAPI, state: State): void {
 	});
 }
 
-function registerCachedOrSetupModels(pi: ExtensionAPI, state: State): void {
+function registerCachedOrSetupModels(
+	pi: ExtensionAPI,
+	state: State,
+): OmlxCredentialResolution {
 	const credential = resolveOmlxCredential(readOmlxCredential(), process.env);
 	const models = credential.configured
 		? registrableCachedModels(readCatalogCache(credential.apiRoot))
@@ -264,10 +272,11 @@ function registerCachedOrSetupModels(pi: ExtensionAPI, state: State): void {
 		state.lastRefreshAt = new Date().toISOString();
 		state.modelSettingsPath = undefined;
 		registerLoginOnlyProvider(pi, state);
-		return;
+		return credential;
 	}
 
 	registerModels(pi, state, credential, models);
+	return credential;
 }
 
 async function refreshProvider(

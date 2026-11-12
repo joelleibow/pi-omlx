@@ -800,3 +800,50 @@ test("a later success adds no second warning", async () => {
 		() => (failing ? catalogRefusedResponse() : jsonResponse(FIXTURE_MODELS)),
 	);
 });
+
+// Requirement 3, the late row: only a session that started login-only is told
+// about models that arrived afterwards.
+test("a late catalog warns once for a session that started login-only", async () => {
+	storeCredential(storedOAuth(STORED_KEY));
+	removeCacheFixture();
+	await driveExtension({}, async ({ notifies, startSession }) => {
+		startSession();
+		assert.deepEqual(notifies, [
+			{
+				message: `oMLX session started login-only; models from ${FIXTURE_API_ROOT} are now available; choose one with /model.`,
+				type: "warning",
+			},
+		]);
+	});
+});
+
+test("a warm cache whose catalog arrives normally warns about nothing", async () => {
+	storeCredential(storedOAuth(STORED_KEY));
+	writeCacheFixture(FIXTURE_API_ROOT, [
+		{ id: "cached-a", contextWindow: 32768, maxTokens: 4096 },
+	]);
+	await driveExtension({}, async ({ notifies, startSession }) => {
+		startSession();
+		assert.deepEqual(notifies, []);
+	});
+});
+
+test("an unconfigured start that later logs in warns about nothing", async () => {
+	removeCacheFixture();
+	await driveExtension(
+		{},
+		async ({ lastRegistered, notifies, startSession }) => {
+			startSession();
+			assert.deepEqual(notifies, []);
+			const login = lastRegistered()?.oauth?.login;
+			assert.ok(login);
+			await login(callbacksReturning(FIXTURE_BASE_URL, STORED_KEY));
+			assert.deepEqual(notifies, []);
+			// What pi does with the credential the login returned.
+			storeCredential(storedOAuth(STORED_KEY));
+			await vi.advanceTimersByTimeAsync(BACKOFF_BASE_MS);
+			assert.equal(lastRegistered()?.baseUrl, FIXTURE_API_ROOT);
+			assert.deepEqual(notifies, []);
+		},
+	);
+});

@@ -68,11 +68,10 @@ Installed into Pi from git with `pi install git:github.com/joelleibow/pi-omlx`. 
 
 The suite is vitest, gated by Biome and a type check. Setup, triage and the live probes are described in [CONTRIBUTING.md](./CONTRIBUTING.md); the commands an agent runs are in [AGENTS.md](./AGENTS.md). `PI_OMLX_DEBUG` turns on the extension's trace lines.
 
-The suite isolates itself on every run. A global setup in `test/isolation/` creates a per-run root under the system temporary directory, points `HOME` and `PI_CODING_AGENT_DIR` into it, clears the extension's own environment keys, and removes the root when the run ends. The worker setup in the same directory injects that root and fails the run when the agent directory, the home directory or the overlay path resolves outside the root. A bare run therefore leaves the operator's agent directory and overlay alone.
+The suite isolates itself on every run. A global setup in `test/isolation/` creates a per-run root under the system temporary directory, points `HOME` and `PI_CODING_AGENT_DIR` into it, clears the extension's own environment keys, and removes the root when the run ends. The worker setup in the same directory injects that root and fails the run when the agent directory, the home directory or the overlay path resolves outside the root. Every temporary path a test's fixture names lies under that root, created there when the test needs a directory, so the teardown covers it. A bare run therefore leaves the operator's agent directory and overlay alone.
 
 ## 9. Future Considerations
 
-- The test seams that let a test point the credential store at a file are due for removal; the agent directory variable is the replacement, and new tests already take that route.
 - One catalog helper has no callers and is kept deliberately for a later change.
 - The resolution mirrors pi-ai's order. A Pi upgrade is the moment to re-read that order against the copy and its tests.
 - A stored `api_key` holding a template or a command behaves differently in the catalog than in requests, as above. Closing it means deciding whether the catalog interpolates at all.

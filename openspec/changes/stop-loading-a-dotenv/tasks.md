@@ -91,7 +91,7 @@ entry point, and the isolation guard's thrown message is untouched.
 
 ## 5. The whole gate
 
-- [ ] 5.1 Verify the change from a clean state, which means no `pi-omlx-test-*` root in the system
+- [x] 5.1 Verify the change from a clean state, which means no `pi-omlx-test-*` root in the system
   temporary directory, no `.env` in the repository, and no `extension-copy-*` anywhere. Run the new
   test alone, then `test/isolation/` alone, then a bare `npm run check`, and record each command,
   its exit code and its first line. Then add a scratch failing test file under `test/`, run

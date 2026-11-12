@@ -1,13 +1,15 @@
 import { strict as assert } from "node:assert";
 import {
 	cpSync,
+	mkdirSync,
 	mkdtempSync,
+	readFileSync,
 	rmSync,
 	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type {
 	ExtensionAPI,
@@ -16,6 +18,7 @@ import type {
 import { afterEach, beforeEach, inject, test, vi } from "vitest";
 import extension, { EXTENSION_SINGLETON_KEY } from "../index.ts";
 import { _setAuthPathForTesting, PROVIDER_KEY } from "../src/auth-storage.ts";
+import type { OmlxModel } from "../src/catalog.ts";
 
 function callbacksReturning(...values: string[]) {
 	const queue = [...values];
@@ -119,8 +122,10 @@ const ENV_KEY = "env-key";
 const FIXTURE_MODELS = {
 	models: [{ id: "real-model", max_context_window: 32768, max_tokens: 4096 }],
 };
-// index.ts polls every ten minutes; the interval is not exported.
+// index.ts polls every ten minutes, and backs off from two seconds after a
+// failure; neither value is exported.
 const POLL_INTERVAL_MS = 10 * 60 * 1000;
+const BACKOFF_BASE_MS = 2_000;
 
 const ENV_KEYS = [
 	"PI_CODING_AGENT_DIR",
@@ -155,7 +160,9 @@ interface FetchCall {
 	authorization: string | undefined;
 }
 
-function recordCatalogFetches(respond: () => Response): FetchCall[] {
+function recordCatalogFetches(
+	respond: () => Response | Promise<Response>,
+): FetchCall[] {
 	const fetches: FetchCall[] = [];
 	globalThis.fetch = (async (
 		url: string | URL | Request,
@@ -184,9 +191,26 @@ interface ProviderCall {
 	config?: ProviderConfig;
 }
 
+interface NotifyCall {
+	message: string;
+	type: string | undefined;
+}
+
+interface SessionShape {
+	hasUI: boolean;
+	mode: string;
+}
+
+type Handler = (event?: unknown, ctx?: unknown) => void;
+
 function fakePi() {
 	const calls: ProviderCall[] = [];
-	const handlers = new Map<string, () => void>();
+	const notifies: NotifyCall[] = [];
+	const setModels: unknown[] = [];
+	const handlers = new Map<string, Handler>();
+	const notify = (message: string, type?: string) => {
+		notifies.push({ message, type });
+	};
 	const pi = {
 		registerProvider: (provider: string, config: ProviderConfig) => {
 			calls.push({ kind: "register", provider, config });
@@ -194,22 +218,76 @@ function fakePi() {
 		unregisterProvider: (provider: string) => {
 			calls.push({ kind: "unregister", provider });
 		},
-		on: (event: string, handler: () => void) => {
+		on: (event: string, handler: Handler) => {
 			handlers.set(event, handler);
 		},
 		getThinkingLevel: () => "off",
+		setModel: (model: unknown) => {
+			setModels.push(model);
+			return true;
+		},
 	} as unknown as ExtensionAPI;
 	return {
 		pi,
 		calls,
+		notifies,
+		setModels,
 		lastRegistered: () =>
 			calls.filter((call) => call.kind === "register").at(-1)?.config,
+		startSession: (shape: SessionShape = { hasUI: true, mode: "rpc" }) => {
+			handlers.get("session_start")?.({}, { ...shape, ui: { notify } });
+		},
 		shutdown: () => handlers.get("session_shutdown")?.(),
 	};
 }
 
-// Drains the microtasks the poll's immediate first refresh runs, so the call
-// log is stable and the ten-minute sleep is already scheduled on the fake clock.
+interface CacheFixture {
+	apiRoot: string;
+	models: OmlxModel[];
+	savedAt: number;
+}
+
+// CACHE_FILE is captured at import (src/catalog.ts:567), so the file the
+// extension reads and writes is the isolation root's, whatever
+// PI_CODING_AGENT_DIR points at while a test runs. The production write mkdirs
+// the agent directory it resolves at call time, which is not this one, so a
+// test that expects that write to land creates this directory itself.
+function cacheFixturePath(): string {
+	return join(inject("isolationRoot"), "agent", "cache", "omlx-models.json");
+}
+
+function writeCacheFixture(apiRoot: string, models: OmlxModel[]): void {
+	const path = cacheFixturePath();
+	mkdirSync(dirname(path), { recursive: true });
+	writeFileSync(
+		path,
+		JSON.stringify({ apiRoot, models, savedAt: Date.now() }, null, 2),
+	);
+}
+
+function readCacheFixture(): CacheFixture | undefined {
+	try {
+		return JSON.parse(readFileSync(cacheFixturePath(), "utf-8"));
+	} catch {
+		return undefined;
+	}
+}
+
+function removeCacheFixture(): void {
+	const path = cacheFixturePath();
+	mkdirSync(dirname(path), { recursive: true });
+	rmSync(path, { force: true });
+}
+
+// A cached model with real limits, under whatever id a test needs: the ids
+// differ so that only the test's own registration or write can satisfy it.
+function cachedModel(id: string): OmlxModel {
+	return { id, contextWindow: 32768, maxTokens: 4096 };
+}
+
+// Drains the microtasks the poll's first tick runs — the session's only startup
+// request — so the call log is stable and the ten-minute sleep is already
+// scheduled on the fake clock.
 async function settle(): Promise<void> {
 	for (let i = 0; i < 20; i++) await Promise.resolve();
 }
@@ -217,7 +295,11 @@ async function settle(): Promise<void> {
 interface DriveContext {
 	fetches: FetchCall[];
 	calls: ProviderCall[];
+	notifies: NotifyCall[];
+	setModels: unknown[];
 	lastRegistered: () => ProviderConfig | undefined;
+	startSession: (shape?: SessionShape) => void;
+	shutdown: () => void;
 	stderr: () => string[];
 }
 
@@ -226,7 +308,8 @@ type EntryFunction = (pi: ExtensionAPI) => Promise<void>;
 async function driveExtension(
 	env: TestEnv,
 	body: (context: DriveContext) => Promise<void>,
-	respond: () => Response = () => jsonResponse(FIXTURE_MODELS),
+	respond: () => Response | Promise<Response> = () =>
+		jsonResponse(FIXTURE_MODELS),
 	loadEntry: () => Promise<EntryFunction> = async () => extension,
 ): Promise<void> {
 	const restoreEnv = withEnv({ ...env, PI_CODING_AGENT_DIR: dir });
@@ -236,6 +319,10 @@ async function driveExtension(
 	const write = vi
 		.spyOn(process.stderr, "write")
 		.mockImplementation(() => true);
+	// vitest intercepts console.* before process.stderr.write, so seeing what
+	// the extension puts on stderr takes both observers.
+	const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+	const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => {});
 	vi.useFakeTimers();
 	try {
 		// Loaded after withEnv, so an entry module that sets the environment has
@@ -246,13 +333,23 @@ async function driveExtension(
 		await body({
 			fetches,
 			calls: fake.calls,
+			notifies: fake.notifies,
+			setModels: fake.setModels,
 			lastRegistered: fake.lastRegistered,
-			stderr: () => write.mock.calls.map(([chunk]) => String(chunk)),
+			startSession: fake.startSession,
+			shutdown: fake.shutdown,
+			stderr: () => [
+				...write.mock.calls.map(([chunk]) => String(chunk)),
+				...consoleError.mock.calls.map((call) => call.map(String).join(" ")),
+				...consoleWarn.mock.calls.map((call) => call.map(String).join(" ")),
+			],
 		});
 	} finally {
 		vi.useRealTimers();
 		fake.shutdown();
 		write.mockRestore();
+		consoleError.mockRestore();
+		consoleWarn.mockRestore();
 		globalThis.fetch = originalFetch;
 		restoreEnv();
 	}
@@ -512,5 +609,430 @@ test("a stored credential without a base URL fetches from the default", async ()
 			assert.equal(lastRegistered()?.models, undefined);
 		},
 		catalogRefusedResponse,
+	);
+});
+
+// Requirement 1. Neither test advances the fake clock, so the only thing that
+// can let the body run is the factory resolving on its own.
+test("a request that never answers does not delay a session with cached models", async () => {
+	storeCredential(storedOAuth(STORED_KEY));
+	writeCacheFixture(FIXTURE_API_ROOT, [cachedModel("cached-model")]);
+	await driveExtension(
+		{},
+		async ({ fetches, lastRegistered }) => {
+			assert.equal(fetches.length, 1);
+			assert.equal(fetches[0]?.url, `${FIXTURE_API_ROOT}/models/status`);
+			assert.deepEqual(
+				lastRegistered()?.models?.map((model) => model.id),
+				["cached-model"],
+			);
+		},
+		neverAnswered,
+	);
+});
+
+test("a request that never answers does not delay a session with no cache", async () => {
+	storeCredential(storedOAuth(STORED_KEY));
+	removeCacheFixture();
+	await driveExtension(
+		{},
+		async ({ fetches, lastRegistered }) => {
+			assert.equal(fetches.length, 1);
+			assert.equal(fetches[0]?.url, `${FIXTURE_API_ROOT}/models/status`);
+			assert.equal(lastRegistered()?.baseUrl, undefined);
+			assert.equal(lastRegistered()?.models, undefined);
+		},
+		neverAnswered,
+	);
+});
+
+function neverAnswered(): Promise<Response> {
+	return new Promise<Response>(() => {});
+}
+
+// Requirement 2: the arrived models are registered for the picker and pi's own
+// choice of starting model is left alone.
+test("a late catalog registers under omlx and moves no model", async () => {
+	storeCredential(storedOAuth(STORED_KEY));
+	removeCacheFixture();
+	await driveExtension({}, async ({ calls, setModels }) => {
+		assert.deepEqual(setModels, []);
+		const registrations = calls.filter((call) => call.kind === "register");
+		const late = registrations.at(-1);
+		assert.equal(late?.provider, "omlx");
+		assert.deepEqual(
+			late?.config?.models?.map((model) => model.id),
+			["real-model"],
+		);
+	});
+});
+
+// Requirement 2, boundary case: a cached start registers under omlx as well.
+test("a cached start registers under omlx without choosing a model", async () => {
+	storeCredential(storedOAuth(STORED_KEY));
+	writeCacheFixture(FIXTURE_API_ROOT, [cachedModel("cached-model")]);
+	await driveExtension({}, async ({ calls, setModels }) => {
+		assert.deepEqual(setModels, []);
+		// The startup registration is the first one; the poll's tick registers the
+		// fetched catalog after it.
+		const startup = calls.find((call) => call.kind === "register");
+		assert.equal(startup?.provider, "omlx");
+		assert.deepEqual(
+			startup?.config?.models?.map((model) => model.id),
+			["cached-model"],
+		);
+	});
+});
+
+// Requirement 1, third scenario. The response's model id appears in no other
+// test, and the cache file is removed first, so only this run's own write can
+// satisfy the assertion.
+test("a successful request registers the fetched models and writes the cache", async () => {
+	storeCredential(storedOAuth(STORED_KEY));
+	removeCacheFixture();
+	await driveExtension(
+		{},
+		async ({ fetches, lastRegistered }) => {
+			assert.equal(fetches.length, 1);
+			assert.deepEqual(
+				lastRegistered()?.models?.map((model) => model.id),
+				["cache-write-model"],
+			);
+			const cache = readCacheFixture();
+			assert.equal(cache?.apiRoot, FIXTURE_API_ROOT);
+			assert.deepEqual(
+				cache?.models?.map((model) => model.id),
+				["cache-write-model"],
+			);
+			assert.equal(cache?.models?.[0]?.contextWindow, 65536);
+			assert.equal(cache?.models?.[0]?.maxTokens, 8192);
+		},
+		() =>
+			jsonResponse({
+				models: [
+					{
+						id: "cache-write-model",
+						max_context_window: 65536,
+						max_tokens: 8192,
+					},
+				],
+			}),
+	);
+});
+
+// Requirement 3: at most one warning per session, through ctx.ui.notify.
+test("a failed load with cached models warns once with the URL and the count", async () => {
+	storeCredential(storedOAuth(STORED_KEY));
+	writeCacheFixture(FIXTURE_API_ROOT, [
+		cachedModel("cached-a"),
+		cachedModel("cached-b"),
+	]);
+	await driveExtension(
+		{},
+		async ({ notifies, startSession }) => {
+			startSession();
+			assert.deepEqual(notifies, [
+				{
+					message: `oMLX model list unavailable at ${FIXTURE_API_ROOT}; using 2 cached models.`,
+					type: "warning",
+				},
+			]);
+		},
+		catalogRefusedResponse,
+	);
+});
+
+test("a failed load with no cache warns once naming the login-only provider", async () => {
+	storeCredential(storedOAuth(STORED_KEY));
+	removeCacheFixture();
+	await driveExtension(
+		{},
+		async ({ notifies, startSession }) => {
+			startSession();
+			assert.deepEqual(notifies, [
+				{
+					message: `oMLX model list unavailable at ${FIXTURE_API_ROOT}; using the login-only provider.`,
+					type: "warning",
+				},
+			]);
+		},
+		catalogRefusedResponse,
+	);
+});
+
+test("a 200 with nothing registrable warns once and writes no cache", async () => {
+	storeCredential(storedOAuth(STORED_KEY));
+	removeCacheFixture();
+	await driveExtension(
+		{},
+		async ({ fetches, notifies, startSession }) => {
+			startSession();
+			assert.equal(fetches.length, 1);
+			assert.equal(notifies.length, 1);
+			assert.equal(readCacheFixture(), undefined);
+		},
+		() =>
+			jsonResponse({
+				models: [{ id: "no-limits", max_context_window: 0, max_tokens: 0 }],
+			}),
+	);
+});
+
+test("a failure before the session starts warns once it does", async () => {
+	storeCredential(storedOAuth(STORED_KEY));
+	writeCacheFixture(FIXTURE_API_ROOT, [cachedModel("cached-a")]);
+	await driveExtension(
+		{},
+		async ({ notifies, startSession }) => {
+			assert.deepEqual(notifies, []);
+			startSession();
+			assert.equal(notifies.length, 1);
+		},
+		catalogRefusedResponse,
+	);
+});
+
+test("a later success adds no second warning", async () => {
+	storeCredential(storedOAuth(STORED_KEY));
+	writeCacheFixture(FIXTURE_API_ROOT, [cachedModel("cached-a")]);
+	let failing = true;
+	await driveExtension(
+		{},
+		async ({ lastRegistered, notifies, startSession }) => {
+			startSession();
+			assert.equal(notifies.length, 1);
+			failing = false;
+			await vi.advanceTimersByTimeAsync(BACKOFF_BASE_MS);
+			assert.deepEqual(
+				lastRegistered()?.models?.map((model) => model.id),
+				["real-model"],
+			);
+			assert.equal(notifies.length, 1);
+		},
+		() => (failing ? catalogRefusedResponse() : jsonResponse(FIXTURE_MODELS)),
+	);
+});
+
+// Requirement 3's once-per-session rule, which the text rule above cannot show:
+// a login-only start fails again on the next tick, and the session starts twice
+// because RPC emits session_start twice on one instance, yet it is told once.
+test("a login-only session warns once, however often it starts or fails again", async () => {
+	storeCredential(storedOAuth(STORED_KEY));
+	removeCacheFixture();
+	await driveExtension(
+		{},
+		async ({ notifies, startSession }) => {
+			startSession();
+			startSession();
+			assert.equal(notifies.length, 1, "the second session_start warned again");
+			await vi.advanceTimersByTimeAsync(BACKOFF_BASE_MS);
+			assert.equal(notifies.length, 1, "a second failed load warned again");
+			startSession();
+			assert.equal(notifies.length, 1, "a later session_start warned again");
+		},
+		catalogRefusedResponse,
+	);
+});
+
+// Requirement 3, the late row: only a session that started login-only is told
+// about models that arrived afterwards.
+test("a late catalog warns once for a session that started login-only", async () => {
+	storeCredential(storedOAuth(STORED_KEY));
+	removeCacheFixture();
+	await driveExtension({}, async ({ notifies, startSession }) => {
+		startSession();
+		assert.deepEqual(notifies, [
+			{
+				message: `oMLX session started login-only; models from ${FIXTURE_API_ROOT} are now available; choose one with /model.`,
+				type: "warning",
+			},
+		]);
+	});
+});
+
+test("a warm cache whose catalog arrives normally warns about nothing", async () => {
+	storeCredential(storedOAuth(STORED_KEY));
+	writeCacheFixture(FIXTURE_API_ROOT, [cachedModel("cached-a")]);
+	await driveExtension({}, async ({ notifies, startSession }) => {
+		startSession();
+		assert.deepEqual(notifies, []);
+	});
+});
+
+test("an unconfigured start that later logs in warns about nothing", async () => {
+	removeCacheFixture();
+	await driveExtension(
+		{},
+		async ({ lastRegistered, notifies, startSession }) => {
+			startSession();
+			assert.deepEqual(notifies, []);
+			const login = lastRegistered()?.oauth?.login;
+			assert.ok(login);
+			await login(callbacksReturning(FIXTURE_BASE_URL, STORED_KEY));
+			assert.deepEqual(notifies, []);
+			// What pi does with the credential the login returned.
+			storeCredential(storedOAuth(STORED_KEY));
+			await vi.advanceTimersByTimeAsync(BACKOFF_BASE_MS);
+			assert.equal(lastRegistered()?.baseUrl, FIXTURE_API_ROOT);
+			assert.deepEqual(notifies, []);
+		},
+	);
+});
+
+// The notice decision traces, and its request does too; without the flag,
+// stderr stays empty.
+test("the notice decision traces under PI_OMLX_DEBUG and is silent without it", async () => {
+	storeCredential(storedOAuth(STORED_KEY));
+	removeCacheFixture();
+	await driveExtension(
+		{ PI_OMLX_DEBUG: "1" },
+		async ({ stderr, startSession }) => {
+			startSession();
+			const held = stderr().find(
+				(chunk) =>
+					chunk.includes("catalog_notice") &&
+					chunk.includes('"decision":"held"'),
+			);
+			assert.ok(held, `no held catalog_notice line: ${stderr().join("")}`);
+			assert.match(held, /"result":"failed"/);
+			assert.ok(held.includes(FIXTURE_API_ROOT));
+			const shown = stderr().find(
+				(chunk) =>
+					chunk.includes("catalog_notice") &&
+					chunk.includes('"decision":"shown"'),
+			);
+			assert.ok(shown, `no shown catalog_notice line: ${stderr().join("")}`);
+			assert.ok(shown.includes("using the login-only provider"));
+			assert.ok(
+				stderr().some((chunk) => chunk.includes("catalog_status_failed")),
+				`no catalog_status_failed line: ${stderr().join("")}`,
+			);
+			assert.ok(
+				stderr().every((chunk) => !chunk.includes(STORED_KEY)),
+				`a line carries the key: ${stderr().join("")}`,
+			);
+		},
+		catalogRefusedResponse,
+	);
+
+	removeCacheFixture();
+	await driveExtension(
+		{},
+		async ({ stderr, startSession }) => {
+			startSession();
+			assert.deepEqual(stderr(), []);
+		},
+		catalogRefusedResponse,
+	);
+});
+
+// pi's UI is a no-op where it provides none; the extension does not guard on
+// hasUI, so the notice still reaches the ui it was handed, and stderr carries
+// nothing beyond what the diagnostics spec allows.
+test("a print-mode session with no UI records the warning and writes no stderr", async () => {
+	storeCredential(storedOAuth(STORED_KEY));
+	removeCacheFixture();
+	await driveExtension(
+		{},
+		async ({ notifies, startSession, stderr }) => {
+			startSession({ hasUI: false, mode: "print" });
+			assert.equal(notifies.length, 1);
+			assert.deepEqual(stderr(), []);
+		},
+		catalogRefusedResponse,
+	);
+});
+
+test("a json-mode session with no UI records the warning and writes no stderr", async () => {
+	storeCredential(storedOAuth(STORED_KEY));
+	removeCacheFixture();
+	await driveExtension(
+		{},
+		async ({ notifies, startSession, stderr }) => {
+			startSession({ hasUI: false, mode: "json" });
+			assert.equal(notifies.length, 1);
+			assert.deepEqual(stderr(), []);
+		},
+		catalogRefusedResponse,
+	);
+});
+
+// Requirement 4: a fetch that outlives its session changes nothing.
+test("a fetch that resolves after shutdown leaves the cache alone", async () => {
+	storeCredential(storedOAuth(STORED_KEY));
+	writeCacheFixture(FIXTURE_API_ROOT, [cachedModel("cached-before")]);
+	const before = readCacheFixture();
+	const held = heldResponse();
+	await driveExtension(
+		{},
+		async ({ fetches, shutdown }) => {
+			assert.equal(fetches.length, 1);
+			shutdown();
+			held.answer(jsonResponse(FIXTURE_MODELS));
+			await settle();
+			assert.deepEqual(readCacheFixture(), before);
+		},
+		held.respond,
+	);
+});
+
+test("a stale fetch that fails outright writes nothing either", async () => {
+	storeCredential(storedOAuth(STORED_KEY));
+	writeCacheFixture(FIXTURE_API_ROOT, [cachedModel("cached-before")]);
+	const before = readCacheFixture();
+	const held = heldResponse();
+	await driveExtension(
+		{},
+		async ({ fetches, shutdown }) => {
+			assert.equal(fetches.length, 1);
+			shutdown();
+			held.answer(catalogRefusedResponse());
+			await settle();
+			assert.deepEqual(readCacheFixture(), before);
+		},
+		held.respond,
+	);
+});
+
+// A response a test holds open and answers when it chooses. Every request the
+// extension makes after the answer gets the same response, so a fetch that fell
+// through from /models/status to /models still completes.
+function heldResponse(): {
+	respond: () => Promise<Response>;
+	answer: (response: Response) => void;
+} {
+	const waiting: Array<(response: Response) => void> = [];
+	let answered: Response | undefined;
+	return {
+		respond: () => {
+			if (answered) return Promise.resolve(answered);
+			return new Promise<Response>((resolve) => {
+				waiting.push(resolve);
+			});
+		},
+		answer: (response: Response) => {
+			answered = response;
+			for (const resolve of waiting.splice(0)) resolve(response);
+		},
+	};
+}
+
+test("a fetch that resolves after shutdown registers nothing and warns nobody", async () => {
+	storeCredential(storedOAuth(STORED_KEY));
+	removeCacheFixture();
+	const held = heldResponse();
+	await driveExtension(
+		{},
+		async ({ calls, fetches, notifies, shutdown, startSession }) => {
+			startSession();
+			assert.equal(fetches.length, 1);
+			const before = calls.length;
+			shutdown();
+			held.answer(jsonResponse(FIXTURE_MODELS));
+			await settle();
+			assert.equal(calls.length, before);
+			assert.deepEqual(notifies, []);
+		},
+		held.respond,
 	);
 });

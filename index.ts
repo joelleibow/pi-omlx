@@ -1,4 +1,7 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type {
+	ExtensionAPI,
+	ExtensionUIContext,
+} from "@earendil-works/pi-coding-agent";
 import { PROVIDER_KEY, readOmlxCredential } from "./src/auth-storage.ts";
 import {
 	fetchModels,
@@ -11,9 +14,11 @@ import {
 	type ConfiguredOmlxCredential,
 	CREDENTIAL_SOURCE_STORED,
 	OMLX_API_KEY_ENV_VAR,
+	type OmlxCredentialResolution,
 	resolveOmlxCredential,
 } from "./src/config.ts";
 import { omlxDebug } from "./src/debug.ts";
+import { catalogNotice, type RefreshResult } from "./src/notice.ts";
 import {
 	createLoginOmlx,
 	getOmlxApiKey,
@@ -25,7 +30,7 @@ import { applyOmlxThinkingControls } from "./src/thinking.ts";
 const PROVIDER = PROVIDER_KEY;
 export const EXTENSION_SINGLETON_KEY = Symbol.for("pi-omlx/loaded");
 
-const STARTUP_TIMEOUT_MS = 2_000;
+const CATALOG_TIMEOUT_MS = 2_000;
 const POLL_INTERVAL_MS = 10 * 60 * 1000;
 const BACKOFF_BASE_MS = 2_000;
 const BACKOFF_MAX_MS = 60_000;
@@ -37,6 +42,10 @@ interface State {
 	lastError: string | undefined;
 	lastRefreshAt: string | undefined;
 	modelSettingsPath: string | undefined;
+	startedLoginOnly: boolean;
+	pendingNotice: string | undefined;
+	warned: boolean;
+	ui: ExtensionUIContext | undefined;
 }
 
 export default async function (pi: ExtensionAPI): Promise<void> {
@@ -51,16 +60,44 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 		lastError: undefined,
 		lastRefreshAt: undefined,
 		modelSettingsPath: undefined,
+		startedLoginOnly: false,
+		pendingNotice: undefined,
+		warned: false,
+		ui: undefined,
 	};
 
-	registerCachedOrSetupModels(pi, state);
-	const initialResult = await refreshProvider(pi, state, {
-		timeoutMs: STARTUP_TIMEOUT_MS,
-	});
-	if (initialResult !== "registered") registerCachedOrSetupModels(pi, state);
+	// One warning per session: the first notice that has somewhere to go wins,
+	// and one that arrives before `session_start` waits there, so a session that
+	// started is told even when its first request failed in milliseconds.
+	const showOnce: ShowNotice = (notice, details) => {
+		let decision = "suppressed";
+		if (notice && !state.warned) {
+			if (state.ui) {
+				decision = "shown";
+				state.warned = true;
+				state.pendingNotice = undefined;
+				state.ui.notify(notice, "warning");
+			} else {
+				decision = "held";
+				state.pendingNotice ??= notice;
+			}
+		}
+		omlxDebug("catalog_notice", { ...details, decision });
+	};
 
-	void startPolling(pi, state).catch((err) => {
+	const credential = registerCachedOrSetupModels(pi, state);
+	// shortcut: a catalog that lands while a later extension's factory is still
+	// loading is still read as "late" here; reading ctx.model.provider in
+	// session_start would close that window, unverified.
+	state.startedLoginOnly = credential.configured && !state.registered;
+
+	void startPolling(pi, state, showOnce).catch((err) => {
 		state.lastError = err instanceof Error ? err.message : String(err);
+	});
+
+	pi.on("session_start", (_event, ctx) => {
+		state.ui = ctx.ui;
+		showOnce(state.pendingNotice, { notice: state.pendingNotice });
 	});
 
 	pi.on("model_select", (event) => {
@@ -95,19 +132,43 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 	});
 }
 
-async function startPolling(pi: ExtensionAPI, state: State): Promise<void> {
+type ShowNotice = (
+	notice: string | undefined,
+	details: Record<string, unknown>,
+) => void;
+
+async function startPolling(
+	pi: ExtensionAPI,
+	state: State,
+	showOnce: ShowNotice,
+): Promise<void> {
 	let backoffMs = BACKOFF_BASE_MS;
 
 	while (!state.stopped) {
-		const result = await refreshProvider(pi, state, {
-			timeoutMs: STARTUP_TIMEOUT_MS,
+		const { result, apiRoot } = await refreshProvider(pi, state, {
+			timeoutMs: CATALOG_TIMEOUT_MS,
 		});
+		// The session ended while this refresh was in flight; its fallback would
+		// register and warn on a dead instance.
+		if (state.stopped) break;
 
-		if (result === "registered") {
-			backoffMs = BACKOFF_BASE_MS;
+		const registered = result === "registered";
+		if (registered) backoffMs = BACKOFF_BASE_MS;
+		else registerCachedOrSetupModels(pi, state);
+		// After the fallback, so the count is the models the session holds now.
+		showOnce(
+			catalogNotice(
+				result,
+				state.startedLoginOnly,
+				apiRoot,
+				state.catalog.length,
+			),
+			{ result, url: apiRoot },
+		);
+
+		if (registered) {
 			await sleep(POLL_INTERVAL_MS);
 		} else {
-			registerCachedOrSetupModels(pi, state);
 			await sleep(backoffMs);
 			backoffMs = Math.min(backoffMs * 2, BACKOFF_MAX_MS);
 		}
@@ -206,7 +267,10 @@ function registerLoginOnlyProvider(pi: ExtensionAPI, state: State): void {
 	});
 }
 
-function registerCachedOrSetupModels(pi: ExtensionAPI, state: State): void {
+function registerCachedOrSetupModels(
+	pi: ExtensionAPI,
+	state: State,
+): OmlxCredentialResolution {
 	const credential = resolveOmlxCredential(readOmlxCredential(), process.env);
 	const models = credential.configured
 		? registrableCachedModels(readCatalogCache(credential.apiRoot))
@@ -220,25 +284,27 @@ function registerCachedOrSetupModels(pi: ExtensionAPI, state: State): void {
 		state.lastRefreshAt = new Date().toISOString();
 		state.modelSettingsPath = undefined;
 		registerLoginOnlyProvider(pi, state);
-		return;
+		return credential;
 	}
 
 	registerModels(pi, state, credential, models);
+	return credential;
 }
-
-type RefreshResult = "registered" | "not_configured" | "failed";
 
 async function refreshProvider(
 	pi: ExtensionAPI,
 	state: State,
 	opts: { timeoutMs?: number } = {},
-): Promise<RefreshResult> {
+): Promise<{ result: RefreshResult; apiRoot: string | undefined }> {
 	const credential = resolveOmlxCredential(readOmlxCredential(), process.env);
 	if (!credential.configured) {
 		state.lastError = "OMLX credentials are not set";
-		return "not_configured";
+		return { result: "not_configured", apiRoot: undefined };
 	}
-	return fetchAndRegister(pi, state, credential, opts);
+	return {
+		result: await fetchAndRegister(pi, state, credential, opts),
+		apiRoot: credential.apiRoot,
+	};
 }
 
 /**
@@ -263,11 +329,18 @@ async function fetchAndRegister(
 		models = await fetchModels(credential.apiRoot, credential.apiKey, {
 			modelSettingsPath,
 			timeoutMs: opts.timeoutMs,
+			// The adapter exists because omlxDebug takes (event, data), not a
+			// CatalogDebugEvent.
+			onDebug: (event) => omlxDebug(event.kind, event.details),
 		});
 	} catch (err) {
 		state.lastError = err instanceof Error ? err.message : String(err);
 		return "failed";
 	}
+
+	// The session ended while this fetch was in flight: its catalog belongs to
+	// no session, and writing it would overwrite the cache the next one reads.
+	if (state.stopped) return "failed";
 
 	const missingLimitIds = missingLimitModelIds(models);
 	const registrable = models.filter(isRegistrableModel);

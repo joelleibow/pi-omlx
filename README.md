@@ -9,7 +9,7 @@ Switch between your local and remote models effortlessly using Pi's built-in `/m
 
 ## ✨ Features
 
-* Auto discovery: fetches and registers available OMLX models without blocking Pi startup.
+* Auto discovery: fetches and registers available OMLX models without blocking Pi startup. With no cache, a session starts without OMLX models; the list arrives a moment later, and `/model` switches to one.
 * Native integration: login uses Pi's standard `/login`, and models use Pi's standard `/model` menu.
 * Smart overrides: applies per-request thinking controls based on each model's `thinkingDefault` metadata.
 

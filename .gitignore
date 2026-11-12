@@ -1,5 +1,6 @@
 node_modules/
 .env
+.envrc
 *.tgz
 package-lock.json
 CONTEXT.md

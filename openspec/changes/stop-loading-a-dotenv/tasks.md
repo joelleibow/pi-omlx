@@ -83,7 +83,7 @@ entry point, and the isolation guard's thrown message is untouched.
   copy's `.env` under the repository's double quotes. That pattern matches a `.env` filename, where a
   bare `\.env` would match every `process.env` read. `npm run check` green.
 
-- [ ] 4.2 Structure step: add `.envrc` to `.gitignore`, on the line after its `.env` entry, as the
+- [x] 4.2 Structure step: add `.envrc` to `.gitignore`, on the line after its `.env` entry, as the
   guard for the direnv guidance the docs pass will add (design D8, the half that is not Markdown).
   Verify: `git check-ignore -v .envrc` prints the `.gitignore` rule and `git check-ignore -v .env`
   still prints its own, so both are covered; delete the line and `git check-ignore .envrc` exits 1,

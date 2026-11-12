@@ -333,7 +333,7 @@ test("the poll re-fetches with the stored credential while both variables are se
 
 test("a login with an empty key registers keyless while the environment key is set", async () => {
 	await driveExtension(
-		{ OMLX_API_KEY: ENV_KEY },
+		{ OMLX_API_KEY: ENV_KEY, OMLX_BASE_URL: FIXTURE_BASE_URL },
 		async ({ fetches, lastRegistered }) => {
 			const login = lastRegistered()?.oauth?.login;
 			assert.ok(login);
@@ -351,7 +351,7 @@ test("a login with an empty key registers keyless while the environment key is s
 
 test("a keyless registration unregisters the keyed one first", async () => {
 	await driveExtension(
-		{ OMLX_API_KEY: ENV_KEY },
+		{ OMLX_API_KEY: ENV_KEY, OMLX_BASE_URL: FIXTURE_BASE_URL },
 		async ({ calls, lastRegistered }) => {
 			const login = lastRegistered()?.oauth?.login;
 			assert.ok(login);
@@ -396,7 +396,11 @@ test("the provider_registered line names the stored source and carries no key", 
 
 test("the provider_registered line reports the environment source", async () => {
 	await driveExtension(
-		{ PI_OMLX_DEBUG: "1", OMLX_API_KEY: ENV_KEY },
+		{
+			PI_OMLX_DEBUG: "1",
+			OMLX_API_KEY: ENV_KEY,
+			OMLX_BASE_URL: FIXTURE_BASE_URL,
+		},
 		async ({ stderr }) => {
 			const line = stderr().find((chunk) =>
 				chunk.includes("provider_registered"),

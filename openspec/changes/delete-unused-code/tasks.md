@@ -55,7 +55,7 @@ Every task is committed separately. A task that checks the shape of its diff mea
 
 ## 3. Structure: The Unread Exports, Chains And Branch
 
-- [ ] 3.1 Delete `readLastCatalogCache` from `src/catalog.ts`. Verify: `npm run check` green.
+- [x] 3.1 Delete `readLastCatalogCache` from `src/catalog.ts`. Verify: `npm run check` green.
 
   - Red evidence: `rg -n 'readLastCatalogCache' index.ts src test scripts` returns only hits naming the symbol's own definition and export; no hit is a call. That empty caller set is what lets it go (Michael §1).
   - Green evidence: the search returns no match at all; the suite green.

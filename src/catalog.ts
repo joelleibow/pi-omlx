@@ -583,10 +583,6 @@ export function readCatalogCache(apiRoot: string): OmlxModel[] | undefined {
 	return data.models;
 }
 
-export function readLastCatalogCache(): OmlxModel[] | undefined {
-	return readCatalogCacheFile()?.models;
-}
-
 function readCatalogCacheFile(): CachedCatalog | undefined {
 	try {
 		const raw = readFileSync(catalogCachePath(), "utf-8");

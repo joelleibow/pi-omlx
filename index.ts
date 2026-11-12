@@ -69,15 +69,20 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 	// One warning per session: the first notice that has somewhere to go wins,
 	// and one that arrives before `session_start` waits there, so a session that
 	// started is told even when its first request failed in milliseconds.
-	const showOnce: ShowNotice = (notice) => {
-		if (!notice || state.warned) return;
-		if (!state.ui) {
-			state.pendingNotice ??= notice;
-			return;
+	const showOnce: ShowNotice = (notice, details) => {
+		let decision = "suppressed";
+		if (notice && !state.warned) {
+			if (state.ui) {
+				decision = "shown";
+				state.warned = true;
+				state.pendingNotice = undefined;
+				state.ui.notify(notice, "warning");
+			} else {
+				decision = "held";
+				state.pendingNotice ??= notice;
+			}
 		}
-		state.warned = true;
-		state.pendingNotice = undefined;
-		state.ui.notify(notice, "warning");
+		omlxDebug("catalog_notice", { ...details, decision });
 	};
 
 	const credential = registerCachedOrSetupModels(pi, state);
@@ -92,7 +97,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 
 	pi.on("session_start", (_event, ctx) => {
 		state.ui = ctx.ui;
-		showOnce(state.pendingNotice);
+		showOnce(state.pendingNotice, { notice: state.pendingNotice });
 	});
 
 	pi.on("model_select", (event) => {
@@ -127,7 +132,10 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 	});
 }
 
-type ShowNotice = (notice: string | undefined) => void;
+type ShowNotice = (
+	notice: string | undefined,
+	details: Record<string, unknown>,
+) => void;
 
 async function startPolling(
 	pi: ExtensionAPI,
@@ -152,6 +160,7 @@ async function startPolling(
 				apiRoot,
 				state.catalog.length,
 			),
+			{ result, url: apiRoot },
 		);
 
 		if (registered) {
@@ -317,6 +326,9 @@ async function fetchAndRegister(
 		models = await fetchModels(credential.apiRoot, credential.apiKey, {
 			modelSettingsPath,
 			timeoutMs: opts.timeoutMs,
+			// The adapter exists because omlxDebug takes (event, data), not a
+			// CatalogDebugEvent.
+			onDebug: (event) => omlxDebug(event.kind, event.details),
 		});
 	} catch (err) {
 		state.lastError = err instanceof Error ? err.message : String(err);

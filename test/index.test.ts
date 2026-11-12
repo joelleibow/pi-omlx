@@ -847,3 +847,50 @@ test("an unconfigured start that later logs in warns about nothing", async () =>
 		},
 	);
 });
+
+// The notice decision traces, and its request does too; without the flag,
+// stderr stays empty.
+test("the notice decision traces under PI_OMLX_DEBUG and is silent without it", async () => {
+	storeCredential(storedOAuth(STORED_KEY));
+	removeCacheFixture();
+	await driveExtension(
+		{ PI_OMLX_DEBUG: "1" },
+		async ({ stderr, startSession }) => {
+			startSession();
+			const held = stderr().find(
+				(chunk) =>
+					chunk.includes("catalog_notice") &&
+					chunk.includes('"decision":"held"'),
+			);
+			assert.ok(held, `no held catalog_notice line: ${stderr().join("")}`);
+			assert.match(held, /"result":"failed"/);
+			assert.ok(held.includes(FIXTURE_API_ROOT));
+			const shown = stderr().find(
+				(chunk) =>
+					chunk.includes("catalog_notice") &&
+					chunk.includes('"decision":"shown"'),
+			);
+			assert.ok(shown, `no shown catalog_notice line: ${stderr().join("")}`);
+			assert.ok(shown.includes("using the login-only provider"));
+			assert.ok(
+				stderr().some((chunk) => chunk.includes("catalog_status_failed")),
+				`no catalog_status_failed line: ${stderr().join("")}`,
+			);
+			assert.ok(
+				stderr().every((chunk) => !chunk.includes(STORED_KEY)),
+				`a line carries the key: ${stderr().join("")}`,
+			);
+		},
+		catalogRefusedResponse,
+	);
+
+	removeCacheFixture();
+	await driveExtension(
+		{},
+		async ({ stderr, startSession }) => {
+			startSession();
+			assert.deepEqual(stderr(), []);
+		},
+		catalogRefusedResponse,
+	);
+});

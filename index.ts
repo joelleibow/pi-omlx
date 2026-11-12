@@ -216,15 +216,9 @@ function registerModels(
 	pi.registerProvider(PROVIDER, {
 		name: "OMLX",
 		oauth: buildOmlxOauth(pi, state),
-		...toProviderConfig(
-			credential.apiRoot,
-			OMLX_API_KEY_ENV_VAR,
-			models,
-			undefined,
-			{
-				keyless,
-			},
-		),
+		...toProviderConfig(credential.apiRoot, OMLX_API_KEY_ENV_VAR, models, {
+			keyless,
+		}),
 	});
 	state.catalog = models;
 	state.registered = true;

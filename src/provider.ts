@@ -6,7 +6,6 @@ import type { OmlxModel } from "./catalog.ts";
 import { FREE_COST } from "./pricing.ts";
 import {
 	resolveFirstDeltaTimeoutMs,
-	type StreamTimeoutEvent,
 	streamOmlxOpenAICompletions,
 } from "./stream.ts";
 import { thinkingFormatFor } from "./thinking-format.ts";
@@ -22,7 +21,6 @@ export function toProviderConfig(
 	apiRoot: string,
 	apiKeyEnvVar: string,
 	models: OmlxModel[],
-	onStreamTimeout?: (event: StreamTimeoutEvent) => void,
 	options: { keyless?: boolean } = {},
 ): ProviderConfig {
 	const config: ProviderConfig = {
@@ -38,7 +36,6 @@ export function toProviderConfig(
 				context,
 				streamOptions,
 				resolveFirstDeltaTimeoutMs(),
-				onStreamTimeout,
 			),
 		models: models.map(toProviderModel),
 	};

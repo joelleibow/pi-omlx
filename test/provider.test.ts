@@ -25,7 +25,6 @@ test("toProviderConfig omits apiKey and auth header for keyless servers", () => 
 		"http://example.test/v1",
 		"OMLX_API_KEY",
 		[],
-		undefined,
 		{ keyless: true },
 	);
 

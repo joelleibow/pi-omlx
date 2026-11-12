@@ -62,7 +62,7 @@ Every task is committed separately. A task that checks the shape of its diff mea
   - Boundary cases: none.
   - Traces to: design step 3; council.md #12.
 
-- [ ] 3.2 Delete the stream timeout chain: `StreamTimeoutEvent`, `OnStreamTimeout`, `streamOmlxOpenAICompletions`'s `onTimeout`, `runAttempt`'s `onTimeout` and `toProviderConfig`'s fourth parameter. Verify: `npm run check` green.
+- [x] 3.2 Delete the stream timeout chain: `StreamTimeoutEvent`, `OnStreamTimeout`, `streamOmlxOpenAICompletions`'s `onTimeout`, `runAttempt`'s `onTimeout` and `toProviderConfig`'s fourth parameter. Verify: `npm run check` green.
 
   - Red evidence: removing the parameter first makes `npm run typecheck` fail at every call site that still passes an argument (TypeScript's expected-argument error names each). That list is the work.
   - Green evidence: every call site drops the argument, including the stream tests that pass `undefined`; the type imports that lose their last use are removed; `resolveFirstDeltaTimeoutMs()` still has a caller outside its own definition; the search for the five names returns no match.

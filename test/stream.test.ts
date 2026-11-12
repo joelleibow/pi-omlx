@@ -197,7 +197,6 @@ test("non-oMLX models pass straight through to the concrete implementation", asy
 		EMPTY_CONTEXT,
 		undefined,
 		1_000,
-		undefined,
 	);
 
 	const events = await collect(stream);
@@ -221,7 +220,6 @@ test("oMLX model streams body events and terminates on done", async () => {
 		EMPTY_CONTEXT,
 		undefined,
 		5_000,
-		undefined,
 	);
 
 	const events = await collect(stream);
@@ -238,13 +236,7 @@ test("a thrown oMLX context-overflow error is normalized like a streamed error e
 	});
 
 	const events = await collect(
-		streamOmlxOpenAICompletions(
-			OMLX_MODEL,
-			EMPTY_CONTEXT,
-			undefined,
-			5_000,
-			undefined,
-		),
+		streamOmlxOpenAICompletions(OMLX_MODEL, EMPTY_CONTEXT, undefined, 5_000),
 	);
 	const last = events.at(-1);
 	assert.equal(last?.type, "error");
@@ -271,7 +263,6 @@ test("buffered thinking is flushed when the inner stream errors mid-stream", asy
 		EMPTY_CONTEXT,
 		undefined,
 		5_000,
-		undefined,
 	);
 
 	const events = await collect(stream);
@@ -313,7 +304,6 @@ test("a repeat-stop triggers at most one reissue, then succeeds", async () => {
 		context,
 		undefined,
 		5_000,
-		undefined,
 	);
 
 	const events = await collect(stream);
@@ -330,7 +320,6 @@ test("two timeouts without progress produce a single terminal error", async () =
 		EMPTY_CONTEXT,
 		undefined,
 		5,
-		undefined,
 	);
 
 	const events = await collect(stream);
@@ -353,7 +342,6 @@ test("a pre-aborted parent signal surfaces as an aborted terminal error", async 
 		EMPTY_CONTEXT,
 		{ signal: controller.signal } as SimpleStreamOptions,
 		5_000,
-		undefined,
 	);
 
 	const events = await collect(stream);

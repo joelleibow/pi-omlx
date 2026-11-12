@@ -34,16 +34,6 @@ const DEFAULT_FIRST_DELTA_TIMEOUT_MS = 120_000;
 const FIRST_DELTA_MAX_ATTEMPTS = 2;
 const MAX_REISSUES = 1;
 
-export type StreamTimeoutEvent = {
-	model: string;
-	timeoutMs: number;
-	attempt: number;
-	maxAttempts: number;
-	final: boolean;
-};
-
-type OnStreamTimeout = (event: StreamTimeoutEvent) => void;
-
 type AttemptResult = "completed" | "reissue" | "timed-out";
 
 function firstDeltaTimeoutMessage(timeoutMs: number, attempts: number): string {
@@ -91,8 +81,6 @@ async function runAttempt(
 	context: TranscriptContext,
 	options: SimpleStreamOptions | undefined,
 	firstDeltaTimeoutMs: number,
-	attempt: number,
-	onTimeout: OnStreamTimeout | undefined,
 	allowReissue: boolean,
 ): Promise<AttemptResult> {
 	const controller = new AbortController();
@@ -106,13 +94,6 @@ async function runAttempt(
 		// timer firing just after the first body event cleared it.
 		if (writer.closed || firstMeaningfulEvent) return;
 		timedOut = true;
-		onTimeout?.({
-			model: model.id,
-			timeoutMs: firstDeltaTimeoutMs,
-			attempt,
-			maxAttempts: FIRST_DELTA_MAX_ATTEMPTS,
-			final: attempt >= FIRST_DELTA_MAX_ATTEMPTS,
-		});
 		controller.abort();
 	}, firstDeltaTimeoutMs);
 
@@ -185,7 +166,6 @@ export function streamOmlxOpenAICompletions(
 	context: TranscriptContext,
 	options: SimpleStreamOptions | undefined,
 	firstDeltaTimeoutMs: number,
-	onTimeout: OnStreamTimeout | undefined,
 ): AssistantMessageEventStream {
 	// Pi dispatches stream handlers by api id, not provider. Registering this
 	// wrapper as the openai-completions streamSimple handler (the mechanism pi
@@ -216,21 +196,18 @@ export function streamOmlxOpenAICompletions(
 
 	(async () => {
 		try {
-			// Separate budgets so a reissue never consumes a timeout attempt and
-			// the loop index is never mutated: timeoutAttemptsLeft governs how
-			// many timed-out retries remain, reissueLeft governs reissues.
+			// Separate budgets so a reissue never consumes a timeout attempt:
+			// timeoutAttemptsLeft governs how many timed-out retries remain,
+			// reissueLeft governs reissues.
 			let timeoutAttemptsLeft = FIRST_DELTA_MAX_ATTEMPTS;
 			let reissueLeft = MAX_REISSUES;
 			while (true) {
-				const attempt = FIRST_DELTA_MAX_ATTEMPTS - timeoutAttemptsLeft + 1;
 				const result = await runAttempt(
 					writer,
 					model,
 					context,
 					options,
 					firstDeltaTimeoutMs,
-					attempt,
-					onTimeout,
 					reissueLeft > 0,
 				);
 				if (writer.closed) return;

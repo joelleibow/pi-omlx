@@ -8,7 +8,6 @@ import {
 	symlinkSync,
 	writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type {
@@ -43,14 +42,13 @@ function jsonResponse(body: unknown): Response {
 let dir: string;
 
 beforeEach(() => {
-	dir = mkdtempSync(join(tmpdir(), "pi-omlx-index-"));
+	dir = mkdtempSync(join(inject("isolationRoot"), "pi-omlx-index-"));
 	_setAuthPathForTesting(join(dir, "auth.json"));
 	delete (globalThis as Record<PropertyKey, unknown>)[EXTENSION_SINGLETON_KEY];
 });
 
 afterEach(() => {
 	_setAuthPathForTesting(undefined);
-	rmSync(dir, { recursive: true, force: true });
 	delete (globalThis as Record<PropertyKey, unknown>)[EXTENSION_SINGLETON_KEY];
 });
 

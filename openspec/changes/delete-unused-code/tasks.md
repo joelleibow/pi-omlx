@@ -143,7 +143,6 @@ Every task is committed separately. A task that checks the shape of its diff mea
   - Green evidence: both diffs empty, so the same models with the same limits and thinking flags (Michael §3(e); council.md #13).
   - Boundary cases: none.
   - Traces to: design step 10, decision 13; owner-rulings §1's acceptance sentence.
+  - Joel, 2026-11-12, at `d643f88`, running `node_modules/.bin/tsx /tmp/omlx-parity/dump.ts` and `pi --list-models omlx` and diffing each against 1.1's baseline: "dump ok", "dump same", "list same".
 
 Two steps follow this list and are neither tasks nor code: the docs pass, which corrects the Markdown this change makes false, and only then the archive, which merges the two delta specs.
-
-  - Joel, 2026-11-12, at `d643f88`, running `node_modules/.bin/tsx /tmp/omlx-parity/dump.ts` and `pi --list-models omlx` and diffing each against 1.1's baseline: "dump ok", "dump same", "list same".

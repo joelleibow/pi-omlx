@@ -1,7 +1,17 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { join } from "node:path";
+import type {
+	AnyModel,
+	Model,
+	RefreshModelsContext,
+} from "@earendil-works/pi-ai";
+import { isModelType } from "@earendil-works/pi-ai";
+import { PROVIDER_KEY } from "./auth-storage.ts";
+import { OMLX_BASE_URL_ENV_VAR } from "./config.ts";
+import { omlxDebug } from "./debug.ts";
+import { FREE_COST } from "./pricing.ts";
+import { thinkingFormatFor } from "./thinking-format.ts";
 
 export interface OmlxModel {
 	id: string;
@@ -111,6 +121,167 @@ export function parseModelsStatusResponse(json: unknown): OmlxModel[] {
 		out.push(m);
 	}
 	return out;
+}
+
+/**
+ * Pi's `refreshModels` for `omlx`: restore what pi stored, then (with the
+ * network allowed) fetch, filter and publish a fresh catalog. `commit` is the
+ * provider's own list, swapped only inside a publish pi accepted.
+ */
+export async function refreshOmlxCatalog(
+	context: RefreshModelsContext,
+	commit: (models: readonly Model<"openai-completions">[]) => void,
+): Promise<void> {
+	// D7 step 1: the offline phase restores what pi stored and returns.
+	if (!context.allowNetwork) {
+		await context.publish({
+			update: () => commit(restoreStoredModels(context.stored)),
+		});
+		return;
+	}
+	// An aborted refresh makes no request and publishes nothing (D7).
+	if (context.signal.aborted) return;
+
+	// D7 step 2: pi hands this phase resolveOmlx's own output, so a missing piece
+	// is a broken contract: it throws where pi records it (D7, D13).
+	const network = networkCredential(context.credential);
+	const fetched = await fetchModels(network.baseUrl, network.key, {
+		signal: context.signal,
+		modelSettingsPath: resolveLocalModelSettingsPath(
+			process.env.OMLX_MODEL_SETTINGS_PATH,
+		),
+		onDebug: (event) => omlxDebug(event.kind, event.details),
+	});
+	const registrable = registrableModels(fetched);
+	if (registrable.length === 0) {
+		// pi records the throw against omlx; this is the only place the operator
+		// can read what the response actually held.
+		omlxDebug("catalog_refresh_failed", {
+			url: network.baseUrl,
+			models: fetched.length,
+		});
+		throw new Error(noRegistrableModelMessage(network.baseUrl, fetched.length));
+	}
+	const published = registrable.map((model) =>
+		toProviderModel(model, network.baseUrl),
+	);
+
+	await context.publish({
+		persist: { models: published, checkedAt: Date.now() },
+		update: () => commit(published),
+	});
+}
+
+/**
+ * What the network phase fetches with. pi hands this phase `resolveOmlx`'s own
+ * output, so a missing piece is a broken contract between the extension and pi
+ * rather than a state to handle: it throws, naming the piece.
+ */
+function networkCredential(credential: RefreshModelsContext["credential"]): {
+	baseUrl: string;
+	key: string;
+} {
+	if (!credential) throw new Error("OMLX refresh: pi supplied no credential");
+	if (credential.type !== "api_key") {
+		throw new Error(
+			`OMLX refresh: pi supplied an ${credential.type} credential, not an api_key one`,
+		);
+	}
+	const baseUrl = credential.env?.[OMLX_BASE_URL_ENV_VAR];
+	if (!baseUrl) {
+		throw new Error("OMLX refresh: the credential carries no OMLX_BASE_URL");
+	}
+	if (!credential.key) {
+		throw new Error("OMLX refresh: the credential carries no API key");
+	}
+	return { baseUrl, key: credential.key };
+}
+
+/**
+ * The one sentence a response holding nothing registrable earns. The refresh
+ * throws it, so pi records it against `omlx` and `/model` can say the catalog
+ * could not be refreshed; the login's probe throws it into the dialog, which is
+ * the only place pi shows the cause.
+ */
+export function noRegistrableModelMessage(
+	baseUrl: string,
+	count: number,
+): string {
+	const noun = count === 1 ? "model" : "models";
+	return `OMLX at ${baseUrl} returned ${count} ${noun}, none with max_context_window and max_tokens.`;
+}
+
+// The store holds plain pi models, so only the ones this provider published are
+// ours to restore.
+function restoreStoredModels(
+	stored: RefreshModelsContext["stored"],
+): readonly Model<"openai-completions">[] {
+	return (stored?.models ?? []).filter(isPublishedModel);
+}
+
+function isPublishedModel(
+	model: AnyModel,
+): model is Model<"openai-completions"> {
+	return isModelType(model, "chat") && model.api === "openai-completions";
+}
+
+const BASE_COMPAT = {
+	supportsDeveloperRole: false,
+	supportsReasoningEffort: false,
+	supportsLongCacheRetention: true,
+	maxTokensField: "max_tokens",
+} as const;
+
+function requirePositive(
+	value: number | undefined,
+	modelId: string,
+	field: string,
+): number {
+	if (typeof value === "number" && value > 0) return value;
+	throw new Error(
+		`OMLX model "${modelId}" did not report ${field}; cannot register it without a real value.`,
+	);
+}
+
+/**
+ * One catalog entry as a complete pi chat model: pi lists a model and routes a
+ * request by `provider`, and reaches it through `baseUrl` and `api`.
+ */
+export function toProviderModel(
+	m: OmlxModel,
+	baseUrl: string,
+): Model<"openai-completions"> {
+	const reasoning = m.thinkingDefault === true;
+	return {
+		id: m.id,
+		name: m.displayName ?? m.id,
+		api: "openai-completions",
+		provider: PROVIDER_KEY,
+		baseUrl,
+		reasoning,
+		input: m.modelType === "vlm" ? ["text", "image"] : ["text"],
+		cost: { ...FREE_COST },
+		contextWindow: requirePositive(m.contextWindow, m.id, "max_context_window"),
+		maxTokens: requirePositive(m.maxTokens, m.id, "max_tokens"),
+		compat: reasoning
+			? { ...BASE_COMPAT, thinkingFormat: thinkingFormatFor(m.reasoningParser) }
+			: { ...BASE_COMPAT },
+	};
+}
+
+/**
+ * The models worth publishing: pi needs a real context window and output limit
+ * for each, and the overlay may be what supplies them. Every caller that
+ * decides what is registrable goes through this one rule.
+ */
+export function registrableModels(models: readonly OmlxModel[]): OmlxModel[] {
+	return models.filter(
+		(model) =>
+			typeof model.contextWindow === "number" &&
+			model.contextWindow > 0 &&
+			typeof model.maxTokens === "number" &&
+			model.maxTokens > 0,
+	);
 }
 
 export const DEFAULT_FETCH_TIMEOUT_MS = 15_000;
@@ -287,13 +458,15 @@ async function getJson(
 	timeoutMs: number,
 ): Promise<unknown> {
 	const signal = withTimeout(parent, timeoutMs);
-	// Empty key => keyless server (skip_api_key_verification): omit the header.
-	const headers = apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined;
+	const headers = { Authorization: `Bearer ${apiKey}` };
 	const res = await fetch(url, {
 		headers,
 		signal,
 	}).catch((err) => {
 		if (err instanceof Error && err.name === "AbortError") {
+			// A caller's abort is not our timeout: it must not become a fallback
+			// request on a signal that is already cancelled.
+			if (parent?.aborted) throw err;
 			throw new Error(`GET ${url} timed out after ${timeoutMs}ms`);
 		}
 		throw err;
@@ -420,46 +593,6 @@ function applyModelSettingsEntry(
 	if (typeof entry.model_type_override === "string")
 		next.modelType = entry.model_type_override.toLowerCase();
 	return next;
-}
-
-// Derived per call, not captured at import: pi resolves the agent directory on
-// every call, and a path captured at load can point at a directory the process
-// has left (catalog-discovery).
-function catalogCachePath(): string {
-	return join(getAgentDir(), "cache", "omlx-models.json");
-}
-
-interface CachedCatalog {
-	apiRoot: string;
-	models: OmlxModel[];
-}
-
-export function readCatalogCache(apiRoot: string): OmlxModel[] | undefined {
-	const data = readCatalogCacheFile();
-	if (!data || data.apiRoot !== apiRoot) return undefined;
-	return data.models;
-}
-
-function readCatalogCacheFile(): CachedCatalog | undefined {
-	try {
-		const raw = readFileSync(catalogCachePath(), "utf-8");
-		const data = JSON.parse(raw) as CachedCatalog;
-		if (!Array.isArray(data.models)) return undefined;
-		return data;
-	} catch {
-		return undefined;
-	}
-}
-
-export function writeCatalogCache(apiRoot: string, models: OmlxModel[]): void {
-	try {
-		const file = catalogCachePath();
-		mkdirSync(dirname(file), { recursive: true });
-		const data: CachedCatalog = { apiRoot, models };
-		writeFileSync(file, JSON.stringify(data, null, 2));
-	} catch {
-		// Ignore write errors — cache is best-effort
-	}
 }
 
 export function resolveLocalModelSettingsPath(

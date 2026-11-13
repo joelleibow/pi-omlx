@@ -2,8 +2,9 @@ import { strict as assert } from "node:assert";
 import { test } from "vitest";
 import {
 	DEFAULT_OMLX_BASE_URL,
+	KEYLESS_PLACEHOLDER,
 	normalizeBaseUrl,
-	resolveOmlxCredential,
+	resolveOmlx,
 } from "../src/config.ts";
 
 test("normalizeBaseUrl appends /v1 when missing", () => {
@@ -42,143 +43,96 @@ const ENV_URL = "http://10.0.0.5:8000/v1";
 const STORED_KEY = "stored-key";
 const ENV_KEY = "env-key";
 
-const ENV_STATES: NodeJS.ProcessEnv[] = [
-	{},
-	{ OMLX_API_KEY: ENV_KEY },
-	{ OMLX_BASE_URL: ENV_URL },
-	{ OMLX_API_KEY: ENV_KEY, OMLX_BASE_URL: ENV_URL },
-];
-
-function resolved(apiRoot: string, apiKey: string, source: string) {
-	return { configured: true, apiRoot, apiKey, source };
+// The environment pi would hand the hook, plus the record of whether the
+// resolution asked it anything: the stored side must consult none of it.
+function envLookup(env: NodeJS.ProcessEnv): {
+	asked: string[];
+	lookup: (name: string) => Promise<string | undefined>;
+} {
+	const asked: string[] = [];
+	return {
+		asked,
+		lookup: async (name) => {
+			asked.push(name);
+			return env[name];
+		},
+	};
 }
 
-test("resolveOmlxCredential reports nothing stored as unconfigured", () => {
-	assert.deepEqual(resolveOmlxCredential(undefined, {}), { configured: false });
-	assert.deepEqual(
-		resolveOmlxCredential(undefined, { OMLX_BASE_URL: ENV_URL }),
-		{
-			configured: false,
-		},
-	);
-});
-
-test("resolveOmlxCredential takes both halves from the environment when nothing is stored", () => {
-	assert.deepEqual(
-		resolveOmlxCredential(undefined, { OMLX_API_KEY: ENV_KEY }),
-		resolved(DEFAULT_OMLX_BASE_URL, ENV_KEY, "environment"),
-	);
-	assert.deepEqual(
-		resolveOmlxCredential(undefined, {
-			OMLX_API_KEY: ENV_KEY,
-			OMLX_BASE_URL: ENV_URL,
-		}),
-		resolved(ENV_URL, ENV_KEY, "environment"),
-	);
-	assert.deepEqual(resolveOmlxCredential(undefined, { OMLX_API_KEY: "" }), {
-		configured: false,
-	});
-});
-
-test("resolveOmlxCredential reads a stored oauth record's own URL and access", () => {
-	for (const env of ENV_STATES) {
+test("resolveOmlx falls back to the default URL for a stored credential with no base URL", async () => {
+	const { asked, lookup } = envLookup({ OMLX_BASE_URL: ENV_URL });
+	// A blank stored URL carries no instruction either, as an environment one
+	// does not (resolveBaseUrl's rule, shared by both sides).
+	for (const credential of [
+		{ key: STORED_KEY },
+		{ key: STORED_KEY, env: { OMLX_BASE_URL: "   " } },
+	]) {
 		assert.deepEqual(
-			resolveOmlxCredential(
-				{ type: "oauth", access: STORED_KEY, baseUrl: STORED_URL },
-				env,
-			),
-			resolved(STORED_URL, STORED_KEY, "stored"),
-			`environment ${JSON.stringify(env)}`,
-		);
-		assert.deepEqual(
-			resolveOmlxCredential(
-				{ type: "oauth", access: "", baseUrl: STORED_URL },
-				env,
-			),
-			resolved(STORED_URL, "", "stored"),
-			`environment ${JSON.stringify(env)}`,
+			await resolveOmlx(credential, lookup),
+			{
+				baseUrl: DEFAULT_OMLX_BASE_URL,
+				apiKey: STORED_KEY,
+				source: "stored",
+			},
+			`credential ${JSON.stringify(credential)}`,
 		);
 	}
-	assert.deepEqual(
-		resolveOmlxCredential(
-			{ type: "oauth", access: STORED_KEY, baseUrl: DEFAULT_OMLX_BASE_URL },
-			{},
-		),
-		resolved(DEFAULT_OMLX_BASE_URL, STORED_KEY, "stored"),
-	);
+	assert.deepEqual(asked, [], `the environment was read: ${asked.join()}`);
 });
 
-test("resolveOmlxCredential reads a stored api_key record with a key", () => {
-	for (const env of ENV_STATES) {
-		assert.deepEqual(
-			resolveOmlxCredential(
-				{ type: "api_key", key: STORED_KEY, baseUrl: STORED_URL },
-				env,
-			),
-			resolved(STORED_URL, STORED_KEY, "stored"),
-			`environment ${JSON.stringify(env)}`,
-		);
-	}
+test("resolveOmlx reads both halves from the environment and reports nothing for a URL alone", async () => {
 	assert.deepEqual(
-		resolveOmlxCredential(
-			{ type: "api_key", key: STORED_KEY },
-			{ OMLX_BASE_URL: ENV_URL },
+		await resolveOmlx(
+			undefined,
+			envLookup({ OMLX_API_KEY: ENV_KEY, OMLX_BASE_URL: ENV_URL }).lookup,
 		),
-		resolved(DEFAULT_OMLX_BASE_URL, STORED_KEY, "stored"),
+		{ baseUrl: ENV_URL, apiKey: ENV_KEY, source: "environment" },
 	);
 	assert.deepEqual(
-		resolveOmlxCredential({ type: "api_key", key: "k" }, {}),
-		resolved(DEFAULT_OMLX_BASE_URL, "k", "stored"),
+		await resolveOmlx(undefined, envLookup({ OMLX_API_KEY: ENV_KEY }).lookup),
+		{ baseUrl: DEFAULT_OMLX_BASE_URL, apiKey: ENV_KEY, source: "environment" },
 	);
-});
-
-test("resolveOmlxCredential reports a stored api_key with an empty key as unconfigured", () => {
-	for (const env of ENV_STATES) {
-		assert.deepEqual(
-			resolveOmlxCredential({ type: "api_key", key: "" }, env),
-			{ configured: false },
+	for (const env of [{ OMLX_BASE_URL: ENV_URL }, {}, { OMLX_API_KEY: "" }]) {
+		assert.equal(
+			await resolveOmlx(undefined, envLookup(env).lookup),
+			undefined,
 			`environment ${JSON.stringify(env)}`,
 		);
 	}
 });
 
-test("resolveOmlxCredential reports a stored record of another type as unconfigured", () => {
-	assert.deepEqual(resolveOmlxCredential({ type: "mystery" }, {}), {
-		configured: false,
-	});
-	assert.deepEqual(
-		resolveOmlxCredential({ type: "mystery" }, { OMLX_API_KEY: ENV_KEY }),
-		{ configured: false },
-	);
-	assert.deepEqual(
-		resolveOmlxCredential(
-			{ type: "mystery", key: "" },
-			{ OMLX_API_KEY: ENV_KEY },
-		),
-		{ configured: false },
-	);
+test("resolveOmlx returns the placeholder for a stored credential with no key while OMLX_API_KEY is set", async () => {
+	const { asked, lookup } = envLookup({ OMLX_API_KEY: ENV_KEY });
+	// `key: ""` is where `||` and `??` differ, and an empty bearer throws
+	// inside pi-ai's client rather than reaching the server.
+	for (const credential of [
+		{ env: { OMLX_BASE_URL: STORED_URL } },
+		{ key: "", env: { OMLX_BASE_URL: STORED_URL } },
+	]) {
+		assert.deepEqual(
+			await resolveOmlx(credential, lookup),
+			{ baseUrl: STORED_URL, apiKey: KEYLESS_PLACEHOLDER, source: "stored" },
+			`credential ${JSON.stringify(credential)}`,
+		);
+	}
+	assert.deepEqual(asked, [], `the environment was read: ${asked.join()}`);
 });
 
-test("resolveOmlxCredential falls back to the default URL for a blank URL", () => {
-	assert.deepEqual(
-		resolveOmlxCredential(
-			{ type: "oauth", access: STORED_KEY, baseUrl: "   " },
-			{},
-		),
-		resolved(DEFAULT_OMLX_BASE_URL, STORED_KEY, "stored"),
-	);
-	assert.deepEqual(
-		resolveOmlxCredential(undefined, {
-			OMLX_API_KEY: ENV_KEY,
-			OMLX_BASE_URL: "   ",
-		}),
-		resolved(DEFAULT_OMLX_BASE_URL, ENV_KEY, "environment"),
-	);
-	assert.deepEqual(
-		resolveOmlxCredential(undefined, {
-			OMLX_API_KEY: ENV_KEY,
-			OMLX_BASE_URL: "",
-		}),
-		resolved(DEFAULT_OMLX_BASE_URL, ENV_KEY, "environment"),
-	);
+test("resolveOmlx returns the stored URL and key while both variables are set", async () => {
+	for (const env of [
+		{ OMLX_API_KEY: ENV_KEY, OMLX_BASE_URL: ENV_URL },
+		{ OMLX_BASE_URL: ENV_URL },
+		{ OMLX_API_KEY: ENV_KEY },
+	]) {
+		const { asked, lookup } = envLookup(env);
+		assert.deepEqual(
+			await resolveOmlx(
+				{ key: STORED_KEY, env: { OMLX_BASE_URL: STORED_URL } },
+				lookup,
+			),
+			{ baseUrl: STORED_URL, apiKey: STORED_KEY, source: "stored" },
+			`environment ${JSON.stringify(env)}`,
+		);
+		assert.deepEqual(asked, [], `the environment was read: ${asked.join()}`);
+	}
 });

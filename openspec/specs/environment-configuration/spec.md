@@ -13,4 +13,5 @@ The extension SHALL take the environment variables it uses from the process envi
 
 - **WHEN** a copy of `index.ts` and `src/` sits in a directory whose `.env` sets `OMLX_API_KEY` and `OMLX_BASE_URL`, the process environment sets neither, nothing is stored, and the fake pi's catalog answers with the suite's fixture models
 - **THEN** importing that copy leaves both keys out of `process.env`
-- **AND** running the copy's default export makes no catalog fetch and registers the login-only provider
+- **AND** running its default export makes no catalog fetch
+- **AND** the registered provider's `check` reports `omlx` unconfigured

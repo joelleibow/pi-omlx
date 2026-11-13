@@ -1,7 +1,6 @@
-import type {
-	ProviderConfig,
-	ProviderModelConfig,
-} from "@earendil-works/pi-coding-agent";
+import type { Model } from "@earendil-works/pi-ai";
+import type { ProviderConfig } from "@earendil-works/pi-coding-agent";
+import { PROVIDER_KEY } from "./auth-storage.ts";
 import type { OmlxModel } from "./catalog.ts";
 import { FREE_COST } from "./pricing.ts";
 import {
@@ -37,7 +36,7 @@ export function toProviderConfig(
 				streamOptions,
 				resolveFirstDeltaTimeoutMs(),
 			),
-		models: models.map(toProviderModel),
+		models: models.map((model) => toProviderModel(model, apiRoot)),
 	};
 	if (!options.keyless) config.apiKey = `$${apiKeyEnvVar}`;
 	return config;
@@ -54,11 +53,21 @@ function requirePositive(
 	);
 }
 
-function toProviderModel(m: OmlxModel): ProviderModelConfig {
+/**
+ * One catalog entry as a complete pi chat model: pi lists a model and routes a
+ * request by `provider`, and reaches it through `baseUrl` and `api`.
+ */
+export function toProviderModel(
+	m: OmlxModel,
+	baseUrl: string,
+): Model<"openai-completions"> {
 	const reasoning = m.thinkingDefault === true;
 	return {
 		id: m.id,
 		name: m.displayName ?? m.id,
+		api: "openai-completions",
+		provider: PROVIDER_KEY,
+		baseUrl,
 		reasoning,
 		input: m.modelType === "vlm" ? ["text", "image"] : ["text"],
 		cost: { ...FREE_COST },

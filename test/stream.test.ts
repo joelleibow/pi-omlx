@@ -45,7 +45,13 @@ vi.mock("@earendil-works/pi-ai/compat", () => ({
 }));
 
 import { PROVIDER_KEY } from "../src/auth-storage.ts";
-import { streamOmlxOpenAICompletions } from "../src/stream.ts";
+
+// The wrapper captures pi-ai's concrete stream at module load, and
+// test/isolation/worker-setup.ts loads src/catalog.ts (now reaching
+// src/stream.ts through src/provider.ts) before this file runs. Clearing the
+// registry makes the captured module the one mocked above.
+vi.resetModules();
+const { streamOmlxOpenAICompletions } = await import("../src/stream.ts");
 
 async function* arrayIterator<T>(items: T[]): AsyncIterable<T> {
 	for (const item of items) yield item;

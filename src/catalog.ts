@@ -1,7 +1,12 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import type { Api, Model, RefreshModelsContext } from "@earendil-works/pi-ai";
+import { isModelType } from "@earendil-works/pi-ai";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { KEYLESS_PLACEHOLDER, OMLX_BASE_URL_ENV_VAR } from "./config.ts";
+import { omlxDebug } from "./debug.ts";
+import { toProviderModel } from "./provider.ts";
 
 export interface OmlxModel {
 	id: string;
@@ -111,6 +116,82 @@ export function parseModelsStatusResponse(json: unknown): OmlxModel[] {
 		out.push(m);
 	}
 	return out;
+}
+
+/**
+ * Pi's `refreshModels` for `omlx`: restore what pi stored, then (with the
+ * network allowed) fetch, filter and publish a fresh catalog. `commit` is the
+ * provider's own list, swapped only inside a publish pi accepted.
+ */
+export async function refreshOmlxCatalog(
+	context: RefreshModelsContext,
+	commit: (models: readonly Model<Api>[]) => void,
+): Promise<void> {
+	const stored = restoreStoredModels(context.stored);
+	await context.publish({ update: () => commit(stored) });
+	if (!context.allowNetwork || context.signal.aborted) return;
+
+	const credential = context.credential;
+	if (credential?.type !== "api_key") return;
+	const baseUrl = credential.env?.[OMLX_BASE_URL_ENV_VAR];
+	if (!baseUrl) return;
+
+	const fetched = await fetchModels(
+		baseUrl,
+		credential.key ?? KEYLESS_PLACEHOLDER,
+		{
+			signal: context.signal,
+			modelSettingsPath: resolveLocalModelSettingsPath(
+				process.env.OMLX_MODEL_SETTINGS_PATH,
+			),
+			onDebug: (event) => omlxDebug(event.kind, event.details),
+		},
+	);
+	const registrable = registrableModels(fetched);
+	if (registrable.length === 0)
+		throw new Error(noRegistrableModelMessage(baseUrl, fetched.length));
+	const published = registrable.map((model) => toProviderModel(model, baseUrl));
+
+	await context.publish({
+		persist: { models: published, checkedAt: Date.now() },
+		update: () => commit(published),
+	});
+}
+
+/**
+ * The one sentence a response holding nothing registrable earns. The refresh
+ * throws it, so pi records it against `omlx` and `/model` can say the catalog
+ * could not be refreshed; the login's probe throws it into the dialog, which is
+ * the only place pi shows the cause.
+ */
+export function noRegistrableModelMessage(
+	baseUrl: string,
+	count: number,
+): string {
+	const noun = count === 1 ? "model" : "models";
+	return `OMLX at ${baseUrl} returned ${count} ${noun}, none with max_context_window and max_tokens.`;
+}
+
+// The store holds plain pi models, so only the chat ones are ours to publish.
+function restoreStoredModels(
+	stored: RefreshModelsContext["stored"],
+): readonly Model<Api>[] {
+	return (stored?.models ?? []).filter((model) => isModelType(model, "chat"));
+}
+
+/**
+ * The models worth publishing: pi needs a real context window and output limit
+ * for each, and the overlay may be what supplies them. Every caller that
+ * decides what is registrable goes through this one rule.
+ */
+export function registrableModels(models: readonly OmlxModel[]): OmlxModel[] {
+	return models.filter(
+		(model) =>
+			typeof model.contextWindow === "number" &&
+			model.contextWindow > 0 &&
+			typeof model.maxTokens === "number" &&
+			model.maxTokens > 0,
+	);
 }
 
 export const DEFAULT_FETCH_TIMEOUT_MS = 15_000;

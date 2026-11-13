@@ -7,6 +7,7 @@ import {
 	fetchModels,
 	type OmlxModel,
 	readCatalogCache,
+	registrableModels,
 	resolveLocalModelSettingsPath,
 	writeCatalogCache,
 } from "./src/catalog.ts";
@@ -228,24 +229,11 @@ function registerModels(
 	});
 }
 
-function isRegistrableModel(model: OmlxModel): boolean {
-	return (
-		typeof model.contextWindow === "number" &&
-		model.contextWindow > 0 &&
-		typeof model.maxTokens === "number" &&
-		model.maxTokens > 0
-	);
-}
-
 function registrableCachedModels(
 	models: OmlxModel[] | undefined,
 ): OmlxModel[] | undefined {
-	const registrable = models?.filter(isRegistrableModel) ?? [];
+	const registrable = registrableModels(models ?? []);
 	return registrable.length > 0 ? registrable : undefined;
-}
-
-function missingLimitModelIds(models: OmlxModel[]): string[] {
-	return models.filter((model) => !isRegistrableModel(model)).map((m) => m.id);
 }
 
 function registerLoginOnlyProvider(pi: ExtensionAPI, state: State): void {
@@ -345,13 +333,12 @@ async function fetchAndRegister(
 	// no session, and writing it would overwrite the cache the next one reads.
 	if (state.stopped) return "failed";
 
-	const missingLimitIds = missingLimitModelIds(models);
-	const registrable = models.filter(isRegistrableModel);
+	const registrable = registrableModels(models);
 
 	if (registrable.length === 0) {
 		state.lastError =
-			missingLimitIds.length > 0
-				? `No OMLX models have max_context_window and max_tokens (${missingLimitIds.length} models missing limits)`
+			models.length > 0
+				? `No OMLX models have max_context_window and max_tokens (${models.length} models missing limits)`
 				: "OMLX returned 0 models";
 		return "failed";
 	}

@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { PROVIDER_KEY } from "./src/auth-storage.ts";
+import { PROVIDER_KEY, readOmlxCredential } from "./src/auth-storage.ts";
 import { omlxDebug } from "./src/debug.ts";
+import { startupNotice } from "./src/notice.ts";
 import { createOmlxProvider } from "./src/provider.ts";
 import { applyOmlxThinkingControls } from "./src/thinking.ts";
 
@@ -11,6 +12,26 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 	// its streams and its model list, and owns the stored credential.
 	const provider = createOmlxProvider();
 	pi.registerProvider(provider);
+
+	// Ruling C1: at most one warning per start, decided from the live context and
+	// the list pi chose from. Nothing here selects or moves a model.
+	pi.on("session_start", async (_event, ctx) => {
+		const storedType = readOmlxCredential()?.type;
+		const auth = await ctx.modelRegistry
+			.getProviderAuth(PROVIDER)
+			.catch((error: unknown) => {
+				omlxDebug("startup_auth_check_failed", {
+					error: error instanceof Error ? error.message : String(error),
+				});
+				return undefined;
+			});
+		const notice = startupNotice({
+			storedType,
+			configured: auth !== undefined,
+			modelCount: provider.getModels().length,
+		});
+		if (notice) ctx.ui.notify(notice, "warning");
+	});
 
 	pi.on("model_select", (event) => {
 		omlxDebug("model_select", {

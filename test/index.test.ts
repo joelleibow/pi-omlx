@@ -1,10 +1,11 @@
 import { strict as assert } from "node:assert";
-import { existsSync, mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Provider, RefreshModelsContext } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { beforeEach, inject, test, vi } from "vitest";
 import extension from "../index.ts";
+import { PROVIDER_KEY } from "../src/auth-storage.ts";
 
 type EntryFunction = (pi: ExtensionAPI) => Promise<void>;
 
@@ -55,6 +56,13 @@ interface SessionShape {
 	mode: string;
 }
 
+// What the session's model registry answers. A defined `getProviderAuth` is
+// what "configured" means, so a test can tell the two registry questions apart.
+interface SessionAnswers {
+	providerAuth?: () => Promise<unknown>;
+	providerAuthStatus?: () => unknown;
+}
+
 type Handler = (event?: unknown, ctx?: unknown) => unknown;
 
 function jsonResponse(body: unknown): Response {
@@ -98,8 +106,28 @@ function fakePi() {
 		providers,
 		notifies,
 		setModels,
-		startSession: (shape: SessionShape = { hasUI: true, mode: "rpc" }) => {
-			handlers.get("session_start")?.({}, { ...shape, ui: { notify } });
+		startSession: async (
+			shape: SessionShape = { hasUI: true, mode: "rpc" },
+			answers: SessionAnswers = {},
+		): Promise<string[]> => {
+			const asked: string[] = [];
+			const modelRegistry = {
+				getProviderAuth: async (provider: string) => {
+					asked.push(`getProviderAuth:${provider}`);
+					return answers.providerAuth
+						? answers.providerAuth()
+						: { auth: { apiKey: "resolved-key" } };
+				},
+				getProviderAuthStatus: (provider: string) => {
+					asked.push(`getProviderAuthStatus:${provider}`);
+					return answers.providerAuthStatus?.() ?? { configured: true };
+				},
+			};
+			await handlers.get("session_start")?.(
+				{},
+				{ ...shape, ui: { notify }, modelRegistry },
+			);
+			return asked;
 		},
 	};
 }
@@ -136,7 +164,11 @@ interface DriveContext {
 	notifies: NotifyCall[];
 	setModels: unknown[];
 	load: () => Promise<void>;
-	startSession: (shape?: SessionShape) => void;
+	stdout: () => string[];
+	startSession: (
+		shape?: SessionShape,
+		answers?: SessionAnswers,
+	) => Promise<string[]>;
 	stderr: () => string[];
 }
 
@@ -163,6 +195,9 @@ async function driveExtension(
 	const write = vi
 		.spyOn(process.stderr, "write")
 		.mockImplementation(() => true);
+	const writeOut = vi
+		.spyOn(process.stdout, "write")
+		.mockImplementation(() => true);
 	// vitest intercepts console.* before process.stderr.write, so seeing what
 	// the extension puts on stderr takes both observers.
 	const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -182,6 +217,7 @@ async function driveExtension(
 				await entry(fake.pi);
 			},
 			startSession: fake.startSession,
+			stdout: () => writeOut.mock.calls.map(([chunk]) => String(chunk)),
 			stderr: () => [
 				...write.mock.calls.map(([chunk]) => String(chunk)),
 				...consoleError.mock.calls.map((call) => call.map(String).join(" ")),
@@ -191,6 +227,7 @@ async function driveExtension(
 	} finally {
 		vi.useRealTimers();
 		write.mockRestore();
+		writeOut.mockRestore();
 		consoleError.mockRestore();
 		consoleWarn.mockRestore();
 		globalThis.fetch = originalFetch;
@@ -256,5 +293,125 @@ test("a second load in one process registers again with no shutdown first", asyn
 		assert.equal(providers.length, 1);
 		await load();
 		assert.equal(providers.length, 2);
+	});
+});
+
+// The session a test starts needs a stored entry when the warning depends on
+// one: `dir` is the agent directory the extension reads.
+function storeCredential(record: Record<string, unknown>): void {
+	writeFileSync(
+		join(dir, "auth.json"),
+		JSON.stringify({ [PROVIDER_KEY]: record }, null, 2),
+	);
+}
+
+// catalog-discovery: ruling C1's landed-model warning, once, naming /model.
+test("a configured start with no models warns once and names /model", async () => {
+	await driveExtension({}, async ({ notifies, startSession }) => {
+		await startSession();
+		assert.equal(notifies.length, 1, "the start showed no single warning");
+		assert.match(notifies[0]?.message ?? "", /\/model/);
+		assert.equal(notifies[0]?.type, "warning");
+	});
+});
+
+// credential-resolution + catalog-discovery: an OAuth-shaped entry is not a
+// login any more, and the start says how to replace it — once, and not with the
+// landed-model warning beside it.
+test("an oauth-shaped entry shows the remedy and nothing else", async () => {
+	storeCredential({
+		type: "oauth",
+		access: "old-key",
+		refresh: "",
+		expires: 0,
+		baseUrl: FIXTURE_BASE_URL,
+	});
+	const authPath = join(dir, "auth.json");
+	const before = readFileSync(authPath);
+
+	await driveExtension({}, async ({ notifies, providers, startSession }) => {
+		const provider = providers[0];
+		assert.ok(provider, "the factory registered no provider");
+		// With no models the landed-model warning would also fire: the remedy
+		// is the one that wins, and it is the only one.
+		await startSession();
+		assert.equal(notifies.length, 1, "the start did not show one warning");
+		const message = notifies[0]?.message ?? "";
+		assert.match(message, /\/logout/);
+		assert.match(message, /\/login/);
+		assert.ok(message.indexOf("/logout") < message.indexOf("/login"), message);
+		assert.ok(
+			!message.includes("/model"),
+			`the landed warning followed: ${message}`,
+		);
+		// Boundary: the entry wins even when models are present.
+		await publishCatalog(provider);
+		await startSession();
+		assert.equal(notifies.length, 2, "the start with models showed no warning");
+		assert.ok(!(notifies[1]?.message ?? "").includes("/model"));
+	});
+
+	assert.deepEqual(readFileSync(authPath), before, "the entry was rewritten");
+});
+
+test("a warm start and an unconfigured start notify nothing", async () => {
+	await driveExtension({}, async ({ notifies, providers, startSession }) => {
+		const provider = providers[0];
+		assert.ok(provider, "the factory registered no provider");
+		await startSession();
+		assert.equal(notifies.length, 1, "the empty start showed no warning");
+		await publishCatalog(provider);
+		notifies.length = 0;
+		await startSession();
+		assert.deepEqual(notifies, [], "a warm start warned");
+		await startSession(undefined, { providerAuth: async () => undefined });
+		assert.deepEqual(notifies, [], "an unconfigured start warned");
+	});
+});
+
+test("the notice reads getProviderAuth and provider.getModels", async () => {
+	await driveExtension(
+		{},
+		async ({ notifies, providers, startSession, stderr }) => {
+			// The status snapshot says configured; the resolution says nothing. A
+			// handler reading the status would warn here.
+			const asked = await startSession(undefined, {
+				providerAuth: async () => undefined,
+				providerAuthStatus: () => ({ configured: true }),
+			});
+			assert.deepEqual(notifies, [], "the status snapshot decided the warning");
+			assert.ok(asked.includes("getProviderAuth:omlx"), asked.join());
+			assert.ok(
+				!asked.some((question) =>
+					question.startsWith("getProviderAuthStatus:"),
+				),
+				asked.join(),
+			);
+
+			// A rejection counts as unconfigured and surfaces nothing.
+			await startSession(undefined, {
+				providerAuth: () => Promise.reject(new Error("ModelsError: auth")),
+			});
+			assert.deepEqual(notifies, []);
+			assert.deepEqual(stderr(), []);
+
+			// The count is the list the provider serves, so one model is a warm start.
+			const provider = providers[0];
+			assert.ok(provider, "the factory registered no provider");
+			await publishCatalog(provider);
+			await startSession();
+			assert.deepEqual(notifies, [], "a start with one model warned");
+		},
+	);
+});
+
+// catalog-discovery: pi's `notify` is a no-op where it has no session UI, so a
+// print or json run stays silent about it.
+test("a print-mode start and a json-mode start write nothing to stdout or stderr", async () => {
+	await driveExtension({}, async ({ startSession, stderr, stdout }) => {
+		await startSession({ hasUI: false, mode: "print" });
+		await startSession({ hasUI: false, mode: "json" });
+		assert.deepEqual(stderr(), []);
+		assert.deepEqual(stdout(), []);
 	});
 });

@@ -1,36 +1,31 @@
-/** What one catalog refresh did, and so which notice it earns. */
-export type RefreshResult = "registered" | "not_configured" | "failed";
+/** Ruling B's remedy for a stored entry pi no longer reads (D8, D9). */
+const OAUTH_REMEDY =
+	"oMLX still holds an old OAuth-style login that pi no longer reads; run /logout omlx, then /login omlx.";
+
+/** Ruling C1's warning for a start that holds no oMLX model to run on. */
+const NO_MODELS =
+	"oMLX is configured but pi holds no oMLX models yet, so this session landed on another provider's model; choose one with /model.";
+
+export interface StartupNoticeInput {
+	/** The stored `omlx` entry's type, as `auth.json` presents it. */
+	storedType: string | undefined;
+	/** Whether pi's own resolution reports `omlx` configured. */
+	configured: boolean;
+	/** How many models the provider serves — the list pi chose from. */
+	modelCount: number;
+}
 
 /**
- * The one user-facing sentence a refresh earns, or `undefined` when the session
- * has nothing worth saying. The session's start shape decides whether arrived
- * models are news: only a login-only start has a model the user may not want.
+ * The one sentence a session's start earns, or `undefined`. A single return
+ * value is what makes "at most one warning per start" structural: the OAuth
+ * remedy is the first branch, so the landed-model warning cannot follow it.
  */
-export function catalogNotice(
-	result: RefreshResult,
-	startedLoginOnly: boolean,
-	url: string | undefined,
-	cachedCount: number,
-): string | undefined {
-	if (url === undefined) return undefined;
-	if (result === "failed") {
-		return cachedCount > 0
-			? unavailableWithCache(url, cachedCount)
-			: unavailableLoginOnly(url);
-	}
-	if (result === "registered" && startedLoginOnly) return arrivedLoginOnly(url);
+export function startupNotice({
+	storedType,
+	configured,
+	modelCount,
+}: StartupNoticeInput): string | undefined {
+	if (storedType === "oauth") return OAUTH_REMEDY;
+	if (configured && modelCount === 0) return NO_MODELS;
 	return undefined;
-}
-
-function unavailableWithCache(url: string, cachedCount: number): string {
-	const noun = cachedCount === 1 ? "model" : "models";
-	return `oMLX model list unavailable at ${url}; using ${cachedCount} cached ${noun}.`;
-}
-
-function unavailableLoginOnly(url: string): string {
-	return `oMLX model list unavailable at ${url}; using the login-only provider.`;
-}
-
-function arrivedLoginOnly(url: string): string {
-	return `oMLX session started login-only; models from ${url} are now available; choose one with /model.`;
 }

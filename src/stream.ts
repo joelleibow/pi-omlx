@@ -8,20 +8,22 @@ import {
 	type TranscriptContext,
 } from "@earendil-works/pi-ai";
 // Resolve the concrete OpenAI Completions stream once, via the lazy API factory
-// re-exported from compat. Calling the compat `streamSimple` dispatcher from
-// inside this wrapper would re-resolve through the api-provider registry; and
-// because this extension registers itself as the openai-completions handler,
-// that routes dispatch -> wrapper -> dispatch -> ... and overflows the stack.
-// The lazy factory returns a closure over the concrete implementation that
-// loads the module on first call and calls it directly — no registry, no
-// re-dispatch. It is captured here at module load, BEFORE the wrapper is
-// registered, so it can never be the wrapper itself.
+// re-exported from compat, and call it directly rather than through the compat
+// `streamSimple` dispatcher: the lazy factory returns a closure over the
+// concrete implementation that loads the module on first call, so the call
+// costs no registry lookup. It is captured here at module load, BEFORE the
+// wrapper is registered, so it can never be the wrapper itself.
+//
+// Pi resolves the provider from `model.provider` before any stream call, so
+// only `omlx` models reach this wrapper and it needs no pass-through branch.
+// shortcut: relies on pi 1.5.2 dispatching streamSimple per provider
+// (model-runtime.js prepareRequest, provider-composer.js streamWith); peer
+// range is "*", re-check on a pi upgrade
 //
 // Note: pi's extension loader (jiti) only aliases a fixed set of pi-ai
 // subpaths (root, /compat, /oauth). Importing `@earendil-works/pi-ai/api/...`
 // is not resolvable there, so the concrete module is reached through compat.
 import { openAICompletionsApi } from "@earendil-works/pi-ai/compat";
-import { PROVIDER_KEY } from "./auth-storage.ts";
 import { omlxDebug } from "./debug.ts";
 import { normalizeErrorEvent, normalizeOverflowMessage } from "./overflow.ts";
 import { isRepeatStop } from "./repeat-stop.ts";
@@ -33,16 +35,6 @@ const streamOpenAICompletionsImpl = openAICompletionsApi().streamSimple;
 const DEFAULT_FIRST_DELTA_TIMEOUT_MS = 120_000;
 const FIRST_DELTA_MAX_ATTEMPTS = 2;
 const MAX_REISSUES = 1;
-
-export type StreamTimeoutEvent = {
-	model: string;
-	timeoutMs: number;
-	attempt: number;
-	maxAttempts: number;
-	final: boolean;
-};
-
-type OnStreamTimeout = (event: StreamTimeoutEvent) => void;
 
 type AttemptResult = "completed" | "reissue" | "timed-out";
 
@@ -91,8 +83,6 @@ async function runAttempt(
 	context: TranscriptContext,
 	options: SimpleStreamOptions | undefined,
 	firstDeltaTimeoutMs: number,
-	attempt: number,
-	onTimeout: OnStreamTimeout | undefined,
 	allowReissue: boolean,
 ): Promise<AttemptResult> {
 	const controller = new AbortController();
@@ -106,13 +96,6 @@ async function runAttempt(
 		// timer firing just after the first body event cleared it.
 		if (writer.closed || firstMeaningfulEvent) return;
 		timedOut = true;
-		onTimeout?.({
-			model: model.id,
-			timeoutMs: firstDeltaTimeoutMs,
-			attempt,
-			maxAttempts: FIRST_DELTA_MAX_ATTEMPTS,
-			final: attempt >= FIRST_DELTA_MAX_ATTEMPTS,
-		});
 		controller.abort();
 	}, firstDeltaTimeoutMs);
 
@@ -185,52 +168,30 @@ export function streamOmlxOpenAICompletions(
 	context: TranscriptContext,
 	options: SimpleStreamOptions | undefined,
 	firstDeltaTimeoutMs: number,
-	onTimeout: OnStreamTimeout | undefined,
 ): AssistantMessageEventStream {
-	// Pi dispatches stream handlers by api id, not provider. Registering this
-	// wrapper as the openai-completions streamSimple handler (the mechanism pi
-	// exposes) replaces the shared entry, so non-oMLX OpenAI-compatible models
-	// (groq, zai, glm, ...) also arrive here. Pass them straight through to the
-	// concrete implementation with no oMLX-specific timeout/reissue logic, so the
-	// extension cannot perturb unrelated providers.
 	omlxDebug("stream_simple_entered", {
 		provider: model.provider,
 		model: model.id,
-		isOmlx: model.provider === PROVIDER_KEY,
 		contextMessages: context.messages.length,
 	});
-	if (model.provider !== PROVIDER_KEY) {
-		omlxDebug("stream_simple_bypassed", {
-			provider: model.provider,
-			model: model.id,
-		});
-		return streamOpenAICompletionsImpl(
-			model as Model<"openai-completions">,
-			context,
-			options,
-		);
-	}
 
 	const stream = createAssistantMessageEventStream();
 	const writer = new StreamWriter(stream, model);
 
 	(async () => {
 		try {
-			// Separate budgets so a reissue never consumes a timeout attempt and
-			// the loop index is never mutated: timeoutAttemptsLeft governs how
-			// many timed-out retries remain, reissueLeft governs reissues.
+			// Separate budgets so a reissue never consumes a timeout attempt:
+			// timeoutAttemptsLeft governs how many timed-out retries remain,
+			// reissueLeft governs reissues.
 			let timeoutAttemptsLeft = FIRST_DELTA_MAX_ATTEMPTS;
 			let reissueLeft = MAX_REISSUES;
 			while (true) {
-				const attempt = FIRST_DELTA_MAX_ATTEMPTS - timeoutAttemptsLeft + 1;
 				const result = await runAttempt(
 					writer,
 					model,
 					context,
 					options,
 					firstDeltaTimeoutMs,
-					attempt,
-					onTimeout,
 					reissueLeft > 0,
 				);
 				if (writer.closed) return;

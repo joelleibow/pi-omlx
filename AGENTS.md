@@ -25,4 +25,3 @@ Dependencies come from `npm install`. [CONTRIBUTING.md](./CONTRIBUTING.md) also 
 - The suite overrides `HOME` and `PI_CODING_AGENT_DIR` and clears the extension's own environment keys, so exporting one of them for a run changes nothing: `PI_OMLX_DEBUG=1 npm test` traces nothing. A test that needs its own agent directory sets it inside the test, as `test/index.test.ts` does.
 - The extension reads Pi's `auth.json` and never writes it. Storing a login is Pi's job, so code that writes a credential there is wrong even when it makes a test pass.
 - The credential resolution restates pi-ai's order and carries a `shortcut:` comment naming that mirror. Re-check it when the Pi version moves, and read `docs/adr/0001-one-credential-decides-the-omlx-connection.md` before changing which credential wins.
-- `readLastCatalogCache` has no callers. It is kept deliberately for a later change, not forgotten.

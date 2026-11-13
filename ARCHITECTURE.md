@@ -44,8 +44,8 @@ The same diagram is stored on its own in `docs/architecture/omlx-connections.mer
 ## 4. Data Stores
 
 - **Pi's credential store**, `auth.json` under Pi's agent directory. The extension reads the `omlx` entry and never writes it; storing a login is Pi's job. See `docs/adr/0001-one-credential-decides-the-omlx-connection.md`.
-- **The catalog cache**, under the agent directory's `cache/`. Holds the last fetched model list with the server URL it came from and a timestamp, keyed by that URL, so a server change costs one refetch. Models are registered from it before the live fetch, so a saved catalog is available immediately. Startup never waits on that fetch: the poll's first tick is the session's only startup request, each of its requests bounded at two seconds, and the cache-before-fetch order is unchanged.
-- **The model metadata overlay**, at `~/.omlx/model_settings.json` or the path in `OMLX_MODEL_SETTINGS_PATH`. Display names, token limits and thinking budgets, which the OMLX API does not return. Read-only, and optional.
+- **The catalog cache**, under the agent directory's `cache/`. Holds the last fetched model list with the server URL it came from, keyed by that URL, so a server change costs one refetch. Models are registered from it before the live fetch, so a saved catalog is available immediately. Startup never waits on that fetch: the poll's first tick is the session's only startup request, each of its requests bounded at two seconds, and the cache-before-fetch order is unchanged.
+- **The model metadata overlay**, at `~/.omlx/model_settings.json` or the path in `OMLX_MODEL_SETTINGS_PATH`. Per-model overrides applied before registration: the display name, the context window and max-out limits, the thinking default, the reasoning parser and the model type. Read-only, and optional.
 
 ## 5. External Integrations
 
@@ -72,7 +72,6 @@ The suite isolates itself on every run. A global setup in `test/isolation/` crea
 
 ## 9. Future Considerations
 
-- One catalog helper has no callers and is kept deliberately for a later change.
 - The resolution mirrors pi-ai's order. A Pi upgrade is the moment to re-read that order against the copy and its tests.
 - A stored `api_key` holding a template or a command behaves differently in the catalog than in requests, as above. Closing it means deciding whether the catalog interpolates at all.
 

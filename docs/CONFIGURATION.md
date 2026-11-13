@@ -49,7 +49,7 @@ A keyless server addressed by `OMLX_BASE_URL` alone, with no login, is unsupport
 
 ## Model metadata overlay
 
-OMLX's API doesn't return display names, context-window hints, or default thinking budgets. Supply them via a local JSON file and the extension merges them into the catalog before registering the provider.
+The overlay overrides values in the catalog before the extension registers the provider: the display name, the context window and max-out limits, the thinking default, the reasoning parser and the model type. Supply them in a local JSON file and the extension merges them in.
 
 - Default path: `~/.omlx/model_settings.json`
 - Override: `OMLX_MODEL_SETTINGS_PATH=/some/other/path.json`
@@ -61,17 +61,19 @@ Per-model schema:
 ```json
 {
   "models": {
-    "qwen3.6-coder-32b": {
-      "display_name": "Qwen3.6 Coder 32B",
-      "description": "...",
+    "qwen3.6-vl-8b": {
+      "display_name": "Qwen3.6 VL 8B",
+      "max_context_window": 131072,
       "max_tokens": 16000,
-      "thinking_budget_enabled": true,
-      "thinking_budget_tokens": 8000,
-      "chat_template_kwargs": { "enable_thinking": true }
+      "enable_thinking": true,
+      "reasoning_parser": "qwen",
+      "model_type_override": "vlm"
     }
   }
 }
 ```
+
+The extension reads those keys and ignores any other key in an entry. `model_type_override` does something only when it is `vlm`, which registers the model as taking images as well as text. `reasoning_parser` selects the chat-template thinking format for `qwen`, `qwen_3_coder`, `llama`, `harmony` and `deepseek_v4`, matched case-insensitively, and any other value falls back to the plain OpenAI format. `chat_template_kwargs.enable_thinking` is read as a fallback for `enable_thinking`.
 
 ## Stream timeout
 

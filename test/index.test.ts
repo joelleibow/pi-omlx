@@ -17,6 +17,7 @@ import { beforeEach, inject, test, vi } from "vitest";
 import extension from "../index.ts";
 import { PROVIDER_KEY } from "../src/auth-storage.ts";
 import type { OmlxModel } from "../src/catalog.ts";
+import { DEFAULT_OMLX_BASE_URL } from "../src/config.ts";
 
 function callbacksReturning(...values: string[]) {
 	const queue = [...values];
@@ -95,10 +96,6 @@ test("/login with an API key registers authenticated OMLX models", async () => {
 		handlers.get("session_shutdown")?.();
 	}
 });
-
-// Imported here rather than with the imports above so the lines the living
-// verification spec cites (72, 76) keep naming the fixture they point at.
-import { DEFAULT_OMLX_BASE_URL } from "../src/config.ts";
 
 // The wiring tests take the credential route this change asks for: a stored
 // `auth.json` under the test's own PI_CODING_AGENT_DIR. `dir` is that
@@ -234,7 +231,6 @@ function fakePi() {
 interface CacheFixture {
 	apiRoot: string;
 	models: OmlxModel[];
-	savedAt: number;
 }
 
 // The cache file under the test's own agent directory: `dir` is what
@@ -247,10 +243,7 @@ function cacheFixturePath(): string {
 function writeCacheFixture(apiRoot: string, models: OmlxModel[]): void {
 	const path = cacheFixturePath();
 	mkdirSync(dirname(path), { recursive: true });
-	writeFileSync(
-		path,
-		JSON.stringify({ apiRoot, models, savedAt: Date.now() }, null, 2),
-	);
+	writeFileSync(path, JSON.stringify({ apiRoot, models }, null, 2));
 }
 
 function readCacheFixture(): CacheFixture | undefined {
@@ -280,6 +273,7 @@ interface DriveContext {
 	notifies: NotifyCall[];
 	setModels: unknown[];
 	lastRegistered: () => ProviderConfig | undefined;
+	load: () => Promise<void>;
 	startSession: (shape?: SessionShape) => void;
 	shutdown: () => void;
 	stderr: () => string[];
@@ -318,6 +312,7 @@ async function driveExtension(
 			notifies: fake.notifies,
 			setModels: fake.setModels,
 			lastRegistered: fake.lastRegistered,
+			load: () => entry(fake.pi),
 			startSession: fake.startSession,
 			shutdown: fake.shutdown,
 			stderr: () => [
@@ -631,8 +626,8 @@ function neverAnswered(): Promise<Response> {
 	return new Promise<Response>(() => {});
 }
 
-// Requirement 2: the arrived models are registered for the picker and pi's own
-// choice of starting model is left alone.
+// Requirement 2: the arrived models are registered for pi's model list and
+// pi's own choice of starting model is left alone.
 test("a late catalog registers under omlx and moves no model", async () => {
 	storeCredential(storedOAuth(STORED_KEY));
 	await driveExtension({}, async ({ calls, setModels }) => {
@@ -662,6 +657,29 @@ test("a cached start registers under omlx without choosing a model", async () =>
 			["cached-model"],
 		);
 	});
+});
+
+// A second copy of the extension in one process runs like any other pi
+// extension, so a second load registers again instead of skipping.
+test("a second load in one process registers again with no shutdown first", async () => {
+	storeCredential(storedOAuth(STORED_KEY));
+	writeCacheFixture(FIXTURE_API_ROOT, [cachedModel("cached-model")]);
+	await driveExtension(
+		{},
+		async ({ calls, load }) => {
+			const registrations = () =>
+				calls.filter((call) => call.kind === "register");
+			assert.equal(registrations().length, 1);
+			await load();
+			assert.deepEqual(
+				registrations().map((call) =>
+					call.config?.models?.map((model) => model.id),
+				),
+				[["cached-model"], ["cached-model"]],
+			);
+		},
+		neverAnswered,
+	);
 });
 
 // Requirement 1, third scenario. The response's model id appears in no other

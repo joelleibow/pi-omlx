@@ -8,7 +8,11 @@ import {
 	parseModelsResponse,
 	parseModelsStatusResponse,
 	resolveArchContextLimits,
+	toProviderModel,
 } from "../src/catalog.ts";
+
+// The URL the mapper writes onto every model it produces.
+const BASE_URL = "http://127.0.0.1:9400/v1";
 
 test("resolveArchContextLimits uses arch ceiling as prio-3 fallback", () => {
 	const [m] = resolveArchContextLimits([{ id: "x", archContextWindow: 72099 }]);
@@ -468,4 +472,80 @@ test("fetchModels times out", async () => {
 	} finally {
 		globalThis.fetch = originalFetch;
 	}
+});
+
+test("toProviderModel marks only explicit thinking_default true as reasoning capable", () => {
+	const models = [
+		{
+			id: "qwen",
+			thinkingDefault: true,
+			reasoningParser: "qwen",
+			contextWindow: 32768,
+			maxTokens: 8192,
+		},
+		{
+			id: "gemma",
+			thinkingDefault: false,
+			contextWindow: 32768,
+			maxTokens: 8192,
+		},
+		{ id: "plain", contextWindow: 32768, maxTokens: 8192 },
+		{
+			id: "no-toggle",
+			thinkingDefault: null,
+			contextWindow: 32768,
+			maxTokens: 8192,
+		},
+	].map((model) => toProviderModel(model, BASE_URL));
+
+	assert.equal(models[0]?.reasoning, true);
+	assert.equal(models[1]?.reasoning, false);
+	assert.equal(models[2]?.reasoning, false);
+	assert.equal(models[3]?.reasoning, false);
+	assert.deepEqual(models[0]?.compat, {
+		supportsDeveloperRole: false,
+		supportsReasoningEffort: false,
+		supportsLongCacheRetention: true,
+		maxTokensField: "max_tokens",
+		thinkingFormat: "qwen-chat-template",
+	});
+	assert.deepEqual(models[1]?.compat, {
+		supportsDeveloperRole: false,
+		supportsReasoningEffort: false,
+		supportsLongCacheRetention: true,
+		maxTokensField: "max_tokens",
+	});
+	assert.deepEqual(models[2]?.compat, {
+		supportsDeveloperRole: false,
+		supportsReasoningEffort: false,
+		supportsLongCacheRetention: true,
+		maxTokensField: "max_tokens",
+	});
+	assert.deepEqual(models[3]?.compat, {
+		supportsDeveloperRole: false,
+		supportsReasoningEffort: false,
+		supportsLongCacheRetention: true,
+		maxTokensField: "max_tokens",
+	});
+});
+
+test("toProviderModel maps displayName to Pi name and keeps OMLX-only settings out of provider model", () => {
+	const models = [
+		{
+			id: "raw-model-id",
+			displayName: "Human Model Name",
+			contextWindow: 32768,
+			maxTokens: 8192,
+			archContextWindow: 65536,
+			reasoningParser: "qwen",
+			thinkingDefault: true,
+		},
+	].map((entry) => toProviderModel(entry, BASE_URL));
+
+	const model = models[0] as unknown as Record<string, unknown>;
+	assert.equal(model.name, "Human Model Name");
+	assert.equal(model.id, "raw-model-id");
+	assert.equal("archContextWindow" in model, false);
+	assert.equal("reasoningParser" in model, false);
+	assert.equal("thinkingDefault" in model, false);
 });

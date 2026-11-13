@@ -61,7 +61,7 @@ export async function loginOmlx(
 	}).catch((error: unknown) => {
 		if (interaction.signal.aborted) throw cancelled();
 		const cause = error instanceof Error ? error.message : String(error);
-		throw new Error(`OMLX did not answer at ${resolved.baseUrl}: ${cause}`);
+		throw new Error(`OMLX login failed at ${resolved.baseUrl}: ${cause}`);
 	});
 	if (registrableModels(models).length === 0) {
 		throw new Error(noRegistrableModelMessage(resolved.baseUrl, models.length));

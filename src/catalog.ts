@@ -132,17 +132,19 @@ export async function refreshOmlxCatalog(
 	context: RefreshModelsContext,
 	commit: (models: readonly Model<"openai-completions">[]) => void,
 ): Promise<void> {
-	// Read before anything is published: a broken credential throws where pi
-	// records it, and the provider's list keeps what it held (D7, D13).
-	const network =
-		context.allowNetwork && !context.signal.aborted
-			? networkCredential(context.credential)
-			: undefined;
+	// D7 step 1: the offline phase restores what pi stored and returns.
+	if (!context.allowNetwork) {
+		await context.publish({
+			update: () => commit(restoreStoredModels(context.stored)),
+		});
+		return;
+	}
+	// An aborted refresh makes no request and publishes nothing (D7).
+	if (context.signal.aborted) return;
 
-	const stored = restoreStoredModels(context.stored);
-	await context.publish({ update: () => commit(stored) });
-	if (!network) return;
-
+	// D7 step 2: pi hands this phase resolveOmlx's own output, so a missing piece
+	// is a broken contract: it throws where pi records it (D7, D13).
+	const network = networkCredential(context.credential);
 	const fetched = await fetchModels(network.baseUrl, network.key, {
 		signal: context.signal,
 		modelSettingsPath: resolveLocalModelSettingsPath(
@@ -456,8 +458,7 @@ async function getJson(
 	timeoutMs: number,
 ): Promise<unknown> {
 	const signal = withTimeout(parent, timeoutMs);
-	// Empty key => keyless server (skip_api_key_verification): omit the header.
-	const headers = apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined;
+	const headers = { Authorization: `Bearer ${apiKey}` };
 	const res = await fetch(url, {
 		headers,
 		signal,

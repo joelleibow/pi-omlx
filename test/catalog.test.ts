@@ -180,30 +180,6 @@ test("fetchModels prefers /models/status", async () => {
 	}
 });
 
-test("fetchModels omits the Authorization header for keyless servers", async () => {
-	const originalFetch = globalThis.fetch;
-	let sawAuthHeader: string | null = "unset";
-	globalThis.fetch = (async (url: string, init?: RequestInit) => {
-		if (url.endsWith("/models/status")) {
-			const headers = new Headers(init?.headers);
-			sawAuthHeader = headers.get("Authorization");
-			return new Response(
-				JSON.stringify({
-					models: [{ id: "x", max_context_window: 1000, max_tokens: 500 }],
-				}),
-				{ status: 200 },
-			);
-		}
-		throw new Error(`unexpected url ${url}`);
-	}) as typeof fetch;
-	try {
-		await fetchModels("http://example.test/v1", "");
-		assert.equal(sawAuthHeader, null);
-	} finally {
-		globalThis.fetch = originalFetch;
-	}
-});
-
 test("fetchModels applies local OMLX model settings for localhost metadata refinement", async () => {
 	const dir = mkdtempSync(join(inject("isolationRoot"), "pi-omlx-"));
 	const settingsPath = join(dir, "model_settings.json");

@@ -60,7 +60,12 @@ interface Harness {
 	publications: ModelsPublication[];
 	fetched: Fetched[];
 	context: RefreshModelsContext;
+	/** pi's network phase: the same context with the network allowed. */
 	refresh: () => Promise<void>;
+	/** pi's offline phase: the same context with the network disallowed. */
+	refreshOffline: () => Promise<void>;
+	/** Make the next publish answer false, as pi does for a refused one. */
+	refusePublish: (refuse: boolean) => void;
 }
 
 function refreshHarness(options: {
@@ -68,7 +73,6 @@ function refreshHarness(options: {
 	credential?: Credential;
 	allowNetwork?: boolean;
 	signal?: AbortSignal;
-	publishReturns?: boolean;
 	respond?: () => Response | Promise<Response>;
 }): Harness {
 	const fetched: Fetched[] = [];
@@ -92,6 +96,7 @@ function refreshHarness(options: {
 		return options.respond?.() ?? catalogResponse([]);
 	}) as typeof fetch;
 
+	let refusePublish = false;
 	const context: RefreshModelsContext = {
 		credential: options.credential,
 		stored: options.stored,
@@ -99,11 +104,18 @@ function refreshHarness(options: {
 		signal: options.signal ?? new AbortController().signal,
 		publish: async (publication) => {
 			publications.push(publication);
-			if (options.publishReturns === false) return false;
+			if (refusePublish) return false;
 			if (publication.persist) state.persisted = publication.persist;
 			publication.update?.();
 			return true;
 		},
+	};
+
+	const run = async (allowNetwork: boolean) => {
+		await refreshOmlxCatalog({ ...context, allowNetwork }, (models) => {
+			state.committed = models;
+			state.commitCalls++;
+		});
 	};
 
 	return {
@@ -111,11 +123,10 @@ function refreshHarness(options: {
 		publications,
 		fetched,
 		context,
-		refresh: async () => {
-			await refreshOmlxCatalog(context, (models) => {
-				state.committed = models;
-				state.commitCalls++;
-			});
+		refresh: () => run(context.allowNetwork),
+		refreshOffline: () => run(false),
+		refusePublish: (refuse: boolean) => {
+			refusePublish = refuse;
 		},
 	};
 }
@@ -286,6 +297,14 @@ test("no registrable model throws and leaves the store and the published list un
 			catalogResponse([{ id: "no-limits" }, { id: "also-no-limits" }]),
 	});
 
+	// pi's offline phase first, so "unchanged" is a real prior value.
+	await harness.refreshOffline();
+	assert.deepEqual(
+		harness.state.committed?.map((model) => model.id),
+		["stored-model"],
+	);
+	const publicationsBefore = harness.publications.length;
+
 	await assert.rejects(harness.refresh, (error: Error) => {
 		assert.ok(error.message.includes(BASE_URL), error.message);
 		assert.match(error.message, /2 models/);
@@ -296,6 +315,11 @@ test("no registrable model throws and leaves the store and the published list un
 		["stored-model"],
 	);
 	assert.equal(harness.state.persisted, undefined, "the failure persisted");
+	assert.equal(
+		harness.publications.length,
+		publicationsBefore,
+		"the failure published",
+	);
 });
 
 test("the fetch receives context.signal and a publish that resolves false without running update leaves getModels unchanged", async () => {
@@ -306,13 +330,22 @@ test("the fetch receives context.signal and a publish that resolves false withou
 			key: "stored-key",
 			env: { OMLX_BASE_URL: BASE_URL },
 		},
+		stored: { models: [storedModel("stored-model")] },
 		signal: controller.signal,
-		publishReturns: false,
 		respond: () =>
 			catalogResponse([
 				{ id: "fetched-model", max_context_window: 65536, max_tokens: 8192 },
 			]),
 	});
+
+	// pi's offline phase establishes the list the refused publish must leave.
+	await harness.refreshOffline();
+	assert.deepEqual(
+		harness.state.committed?.map((model) => model.id),
+		["stored-model"],
+	);
+	const publicationsBefore = harness.publications.length;
+	harness.refusePublish(true);
 
 	await harness.refresh();
 
@@ -323,8 +356,17 @@ test("the fetch receives context.signal and a publish that resolves false withou
 	assert.equal(requestSignal.aborted, false);
 	controller.abort();
 	assert.equal(requestSignal.aborted, true);
-	assert.equal(harness.publications.length, 2);
-	assert.equal(harness.state.commitCalls, 0, "a refused publish committed");
+	assert.equal(
+		harness.publications.length,
+		publicationsBefore + 1,
+		"the network phase published once",
+	);
+	assert.equal(harness.state.commitCalls, 1, "a refused publish committed");
+	assert.deepEqual(
+		harness.state.committed?.map((model) => model.id),
+		["stored-model"],
+		"the refused publish left getModels unchanged",
+	);
 });
 
 test("an already-aborted signal makes no request", async () => {
@@ -347,7 +389,8 @@ test("an already-aborted signal makes no request", async () => {
 
 	assert.deepEqual(harness.fetched, []);
 	assert.equal(harness.state.persisted, undefined);
-	assert.deepEqual(harness.state.committed, []);
+	assert.equal(harness.state.commitCalls, 0, "an aborted refresh committed");
+	assert.equal(harness.publications.length, 0, "an aborted refresh published");
 });
 
 function withEnv(key: string, value: string): () => void {

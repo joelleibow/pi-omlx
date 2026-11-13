@@ -194,8 +194,10 @@ test("loginOmlx fails with the cause when the fetch throws", async () => {
 	await assert.rejects(
 		() => loginOmlx(interactionAnswering([BASE_URL, "omlx-key"])),
 		(error: Error) => {
-			assert.match(error.message, /ECONNREFUSED/);
+			// An unreachable server keeps its cause, under the one wording.
+			assert.match(error.message, /OMLX login failed at/);
 			assert.ok(error.message.includes(BASE_URL), error.message);
+			assert.match(error.message, /ECONNREFUSED/);
 			return true;
 		},
 	);
@@ -216,7 +218,15 @@ test("loginOmlx fails when the server rejects the key", async () => {
 
 	await assert.rejects(
 		() => loginOmlx(interactionAnswering([BASE_URL, "wrong-key"])),
-		/401.*Invalid API key/,
+		(error: Error) => {
+			// A server that answered and rejected the key did answer: the message
+			// must not call it a non-answer.
+			assert.match(error.message, /OMLX login failed at/);
+			assert.ok(error.message.includes(BASE_URL), error.message);
+			assert.match(error.message, /401.*Invalid API key/);
+			assert.ok(!/did not answer/.test(error.message), error.message);
+			return true;
+		},
 	);
 });
 

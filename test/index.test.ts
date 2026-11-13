@@ -1,6 +1,14 @@
 import { strict as assert } from "node:assert";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+	cpSync,
+	existsSync,
+	mkdtempSync,
+	readFileSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import type {
 	Model,
 	Provider,
@@ -525,5 +533,53 @@ test("a request for a model in no list is left alone", async () => {
 				"a model in no list had its payload rewritten",
 			);
 		},
+	);
+});
+
+// environment-configuration: a `.env` beside the entry module configures
+// nothing. The copy is what a user installing from the repository has, so a read
+// from the working directory, or of another filename, would stay green.
+// shortcut: proves the .env is not read; upgrade this test if a configuration
+// file reader is proposed.
+test("a .env beside a copy of index.ts configures nothing", async () => {
+	const repoRoot = fileURLToPath(new URL("..", import.meta.url));
+	const copyDir = mkdtempSync(join(inject("isolationRoot"), "extension-copy-"));
+	cpSync(join(repoRoot, "index.ts"), join(copyDir, "index.ts"));
+	cpSync(join(repoRoot, "src"), join(copyDir, "src"), { recursive: true });
+	symlinkSync(join(repoRoot, "node_modules"), join(copyDir, "node_modules"));
+	writeFileSync(
+		join(copyDir, ".env"),
+		"OMLX_BASE_URL=http://from-dotenv.invalid/v1\nOMLX_API_KEY=from-dotenv\n",
+	);
+
+	await driveExtension(
+		{},
+		async ({ fetches, providers }) => {
+			assert.equal(process.env.OMLX_API_KEY, undefined);
+			assert.equal(process.env.OMLX_BASE_URL, undefined);
+			assert.deepEqual(fetches, [], "the copy made a catalog fetch");
+			const provider = providers[0];
+			assert.ok(provider, "the factory registered no provider");
+			const check = provider.auth.apiKey?.check;
+			assert.ok(check, "the provider declares no API-key check");
+			assert.equal(
+				await check({
+					ctx: {
+						env: async (name: string) => process.env[name],
+						fileExists: async () => false,
+					},
+					credential: undefined,
+					signal: new AbortController().signal,
+				}),
+				undefined,
+				"the .env beside the copy configured omlx",
+			);
+		},
+		async () =>
+			(
+				await import(
+					/* @vite-ignore */ pathToFileURL(join(copyDir, "index.ts")).href
+				)
+			).default,
 	);
 });

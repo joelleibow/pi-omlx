@@ -1,7 +1,17 @@
-import type { Model } from "@earendil-works/pi-ai";
+import type {
+	ApiKeyCredential,
+	AuthCheck,
+	AuthContext,
+	AuthResult,
+	Model,
+	Provider,
+} from "@earendil-works/pi-ai";
+import { openAICompletionsApi } from "@earendil-works/pi-ai/compat";
 import type { ProviderConfig } from "@earendil-works/pi-coding-agent";
 import { PROVIDER_KEY } from "./auth-storage.ts";
-import type { OmlxModel } from "./catalog.ts";
+import { type OmlxModel, refreshOmlxCatalog } from "./catalog.ts";
+import { OMLX_BASE_URL_ENV_VAR, resolveOmlx } from "./config.ts";
+import { loginOmlx } from "./login.ts";
 import { FREE_COST } from "./pricing.ts";
 import {
 	resolveFirstDeltaTimeoutMs,
@@ -15,6 +25,72 @@ const BASE_COMPAT = {
 	supportsLongCacheRetention: true,
 	maxTokensField: "max_tokens",
 } as const;
+
+/**
+ * The one provider pi registers for `omlx`: a native API-key login, the model
+ * list its own refresh hook publishes, and both stream entry points. pi uses the
+ * object untouched unless `models.json` overlays it.
+ */
+export function createOmlxProvider(): Provider<"openai-completions"> {
+	// The concrete API is captured once: it is what both stream entry points
+	// reach, and it can never be this provider's own wrapper.
+	const openAICompletions = openAICompletionsApi();
+	let models: readonly Model<"openai-completions">[] = [];
+
+	const resolve = async (input: {
+		ctx: AuthContext;
+		credential?: ApiKeyCredential;
+	}): Promise<AuthResult | undefined> => {
+		const resolution = await resolveOmlx(input.credential, (name) =>
+			input.ctx.env(name),
+		);
+		if (!resolution) return undefined;
+		return {
+			auth: { apiKey: resolution.apiKey, baseUrl: resolution.baseUrl },
+			env: { [OMLX_BASE_URL_ENV_VAR]: resolution.baseUrl },
+			source: resolution.source,
+		};
+	};
+
+	const check = async (input: {
+		ctx: AuthContext;
+		credential?: ApiKeyCredential;
+	}): Promise<AuthCheck | undefined> => {
+		const resolution = await resolveOmlx(input.credential, (name) =>
+			input.ctx.env(name),
+		);
+		return resolution
+			? { type: "api_key", source: resolution.source }
+			: undefined;
+	};
+
+	return {
+		id: PROVIDER_KEY,
+		name: "OMLX",
+		auth: {
+			apiKey: {
+				name: "OMLX",
+				login: loginOmlx,
+				check,
+				resolve,
+			},
+		},
+		getModels: () => models,
+		refreshModels: async (context) =>
+			refreshOmlxCatalog(context, (next) => {
+				models = next;
+			}),
+		stream: (model, context, options) =>
+			openAICompletions.stream(model, context, options),
+		streamSimple: (model, context, options) =>
+			streamOmlxOpenAICompletions(
+				model,
+				context,
+				options,
+				resolveFirstDeltaTimeoutMs(),
+			),
+	};
+}
 
 export function toProviderConfig(
 	apiRoot: string,

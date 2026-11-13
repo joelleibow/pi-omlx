@@ -1,7 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import type { Api, Model, RefreshModelsContext } from "@earendil-works/pi-ai";
+import type {
+	AnyModel,
+	Model,
+	RefreshModelsContext,
+} from "@earendil-works/pi-ai";
 import { isModelType } from "@earendil-works/pi-ai";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { KEYLESS_PLACEHOLDER, OMLX_BASE_URL_ENV_VAR } from "./config.ts";
@@ -125,7 +129,7 @@ export function parseModelsStatusResponse(json: unknown): OmlxModel[] {
  */
 export async function refreshOmlxCatalog(
 	context: RefreshModelsContext,
-	commit: (models: readonly Model<Api>[]) => void,
+	commit: (models: readonly Model<"openai-completions">[]) => void,
 ): Promise<void> {
 	const stored = restoreStoredModels(context.stored);
 	await context.publish({ update: () => commit(stored) });
@@ -172,11 +176,18 @@ export function noRegistrableModelMessage(
 	return `OMLX at ${baseUrl} returned ${count} ${noun}, none with max_context_window and max_tokens.`;
 }
 
-// The store holds plain pi models, so only the chat ones are ours to publish.
+// The store holds plain pi models, so only the ones this provider published are
+// ours to restore.
 function restoreStoredModels(
 	stored: RefreshModelsContext["stored"],
-): readonly Model<Api>[] {
-	return (stored?.models ?? []).filter((model) => isModelType(model, "chat"));
+): readonly Model<"openai-completions">[] {
+	return (stored?.models ?? []).filter(isPublishedModel);
+}
+
+function isPublishedModel(
+	model: AnyModel,
+): model is Model<"openai-completions"> {
+	return isModelType(model, "chat") && model.api === "openai-completions";
 }
 
 /**

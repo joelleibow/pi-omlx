@@ -177,13 +177,43 @@ test("the network phase publishes the fetched models with persist", async () => 
 	);
 });
 
-test("the network phase returns without fetching when nothing is a stored api_key", async () => {
-	const harness = refreshHarness({ credential: undefined });
+// D7/D13: pi hands this phase resolveOmlx's own output, so a credential that is
+// absent, is not api_key, is keyless or carries no env.OMLX_BASE_URL is a broken
+// contract. It throws where pi records it, instead of returning and leaving the
+// user with no models and no cause.
+test("a credential the resolution cannot produce throws, fetches nothing and publishes nothing", async () => {
+	const cases = [
+		{ credential: undefined, names: /no credential/i },
+		{
+			credential: {
+				type: "oauth",
+				access: "old-key",
+				refresh: "",
+				expires: 0,
+			},
+			names: /oauth.*api_key/i,
+		},
+		{
+			credential: { type: "api_key", env: { OMLX_BASE_URL: BASE_URL } },
+			names: /no API key/i,
+		},
+		{
+			credential: { type: "api_key", key: "stored-key" },
+			names: /no OMLX_BASE_URL/,
+		},
+	] as const;
 
-	await harness.refresh();
+	for (const { credential, names } of cases) {
+		const harness = refreshHarness({ credential });
 
-	assert.deepEqual(harness.fetched, []);
-	assert.deepEqual(harness.state.committed, []);
+		await assert.rejects(harness.refresh, (error: Error) => {
+			assert.match(error.message, names, JSON.stringify(credential));
+			return true;
+		});
+		assert.deepEqual(harness.fetched, [], JSON.stringify(credential));
+		assert.deepEqual(harness.publications, [], JSON.stringify(credential));
+		assert.equal(harness.state.committed, undefined);
+	}
 });
 
 test("the published model carries provider omlx, api openai-completions and the fetch URL as baseUrl", async () => {

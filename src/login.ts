@@ -51,7 +51,6 @@ export async function loginOmlx(
 	// store, and discard it. The dialog is the only surface that shows its
 	// failure, which is why the login runs it at all (ruling C2).
 	const resolved = await resolveOmlx(credential, noEnvironment);
-	if (!resolved) throw new Error("the login produced no credential");
 	if (interaction.signal.aborted) throw cancelled();
 	const models = await fetchModels(resolved.baseUrl, resolved.apiKey, {
 		signal: interaction.signal,

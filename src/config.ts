@@ -35,15 +35,29 @@ export interface OmlxResolution {
 	source: OmlxCredentialSource;
 }
 
+/** The parts of pi's stored api_key credential a resolution reads. */
+export type OmlxStoredCredential = { key?: string; env?: ProviderEnv };
+
+/** The environment pi's `AuthContext` offers a hook. */
+export type OmlxEnvLookup = (name: string) => Promise<string | undefined>;
+
 /**
  * The one resolution pi's `check` and `resolve` hooks run, and the login's
  * probe with them. A credential pi supplies decides both halves on its own; the
  * environment is read only when there is none, which is
  * docs/adr/0001-one-credential-decides-the-omlx-connection.md's order.
  */
+export function resolveOmlx(
+	credential: OmlxStoredCredential,
+	envLookup: OmlxEnvLookup,
+): Promise<OmlxResolution>;
+export function resolveOmlx(
+	credential: OmlxStoredCredential | undefined,
+	envLookup: OmlxEnvLookup,
+): Promise<OmlxResolution | undefined>;
 export async function resolveOmlx(
-	credential: { key?: string; env?: ProviderEnv } | undefined,
-	envLookup: (name: string) => Promise<string | undefined>,
+	credential: OmlxStoredCredential | undefined,
+	envLookup: OmlxEnvLookup,
 ): Promise<OmlxResolution | undefined> {
 	if (credential) {
 		return {

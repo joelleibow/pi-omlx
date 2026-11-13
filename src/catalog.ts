@@ -8,7 +8,7 @@ import type {
 } from "@earendil-works/pi-ai";
 import { isModelType } from "@earendil-works/pi-ai";
 import { PROVIDER_KEY } from "./auth-storage.ts";
-import { KEYLESS_PLACEHOLDER, OMLX_BASE_URL_ENV_VAR } from "./config.ts";
+import { OMLX_BASE_URL_ENV_VAR } from "./config.ts";
 import { omlxDebug } from "./debug.ts";
 import { FREE_COST } from "./pricing.ts";
 import { thinkingFormatFor } from "./thinking-format.ts";
@@ -132,42 +132,67 @@ export async function refreshOmlxCatalog(
 	context: RefreshModelsContext,
 	commit: (models: readonly Model<"openai-completions">[]) => void,
 ): Promise<void> {
+	// Read before anything is published: a broken credential throws where pi
+	// records it, and the provider's list keeps what it held (D7, D13).
+	const network =
+		context.allowNetwork && !context.signal.aborted
+			? networkCredential(context.credential)
+			: undefined;
+
 	const stored = restoreStoredModels(context.stored);
 	await context.publish({ update: () => commit(stored) });
-	if (!context.allowNetwork || context.signal.aborted) return;
+	if (!network) return;
 
-	const credential = context.credential;
-	if (credential?.type !== "api_key") return;
-	const baseUrl = credential.env?.[OMLX_BASE_URL_ENV_VAR];
-	if (!baseUrl) return;
-
-	const fetched = await fetchModels(
-		baseUrl,
-		credential.key ?? KEYLESS_PLACEHOLDER,
-		{
-			signal: context.signal,
-			modelSettingsPath: resolveLocalModelSettingsPath(
-				process.env.OMLX_MODEL_SETTINGS_PATH,
-			),
-			onDebug: (event) => omlxDebug(event.kind, event.details),
-		},
-	);
+	const fetched = await fetchModels(network.baseUrl, network.key, {
+		signal: context.signal,
+		modelSettingsPath: resolveLocalModelSettingsPath(
+			process.env.OMLX_MODEL_SETTINGS_PATH,
+		),
+		onDebug: (event) => omlxDebug(event.kind, event.details),
+	});
 	const registrable = registrableModels(fetched);
 	if (registrable.length === 0) {
 		// pi records the throw against omlx; this is the only place the operator
 		// can read what the response actually held.
 		omlxDebug("catalog_refresh_failed", {
-			url: baseUrl,
+			url: network.baseUrl,
 			models: fetched.length,
 		});
-		throw new Error(noRegistrableModelMessage(baseUrl, fetched.length));
+		throw new Error(noRegistrableModelMessage(network.baseUrl, fetched.length));
 	}
-	const published = registrable.map((model) => toProviderModel(model, baseUrl));
+	const published = registrable.map((model) =>
+		toProviderModel(model, network.baseUrl),
+	);
 
 	await context.publish({
 		persist: { models: published, checkedAt: Date.now() },
 		update: () => commit(published),
 	});
+}
+
+/**
+ * What the network phase fetches with. pi hands this phase `resolveOmlx`'s own
+ * output, so a missing piece is a broken contract between the extension and pi
+ * rather than a state to handle: it throws, naming the piece.
+ */
+function networkCredential(credential: RefreshModelsContext["credential"]): {
+	baseUrl: string;
+	key: string;
+} {
+	if (!credential) throw new Error("OMLX refresh: pi supplied no credential");
+	if (credential.type !== "api_key") {
+		throw new Error(
+			`OMLX refresh: pi supplied an ${credential.type} credential, not an api_key one`,
+		);
+	}
+	const baseUrl = credential.env?.[OMLX_BASE_URL_ENV_VAR];
+	if (!baseUrl) {
+		throw new Error("OMLX refresh: the credential carries no OMLX_BASE_URL");
+	}
+	if (!credential.key) {
+		throw new Error("OMLX refresh: the credential carries no API key");
+	}
+	return { baseUrl, key: credential.key };
 }
 
 /**

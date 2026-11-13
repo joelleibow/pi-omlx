@@ -323,7 +323,11 @@ function storeCredential(record: Record<string, unknown>): void {
 test("a configured start with no models warns once and names /model", async () => {
 	await driveExtension({}, async ({ notifies, startSession }) => {
 		await startSession();
-		assert.equal(notifies.length, 1, "the start showed no single warning");
+		assert.equal(
+			notifies.length,
+			1,
+			"the start did not show exactly one warning",
+		);
 		assert.match(notifies[0]?.message ?? "", /\/model/);
 		assert.equal(notifies[0]?.type, "warning");
 	});
@@ -372,10 +376,7 @@ test("a warm start and an unconfigured start notify nothing", async () => {
 	await driveExtension({}, async ({ notifies, providers, startSession }) => {
 		const provider = providers[0];
 		assert.ok(provider, "the factory registered no provider");
-		await startSession();
-		assert.equal(notifies.length, 1, "the empty start showed no warning");
 		await publishCatalog(provider);
-		notifies.length = 0;
 		await startSession();
 		assert.deepEqual(notifies, [], "a warm start warned");
 		await startSession(undefined, { providerAuth: async () => undefined });

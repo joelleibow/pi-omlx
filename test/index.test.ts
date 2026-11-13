@@ -9,6 +9,7 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import type { Provider } from "@earendil-works/pi-ai";
 import type {
 	ExtensionAPI,
 	ProviderConfig,
@@ -17,7 +18,7 @@ import { beforeEach, inject, test, vi } from "vitest";
 import extension from "../index.ts";
 import { PROVIDER_KEY } from "../src/auth-storage.ts";
 import type { OmlxModel } from "../src/catalog.ts";
-import { DEFAULT_OMLX_BASE_URL } from "../src/config.ts";
+import { DEFAULT_OMLX_BASE_URL, KEYLESS_PLACEHOLDER } from "../src/config.ts";
 
 function callbacksReturning(...values: string[]) {
 	const queue = [...values];
@@ -199,8 +200,15 @@ function fakePi() {
 		notifies.push({ message, type });
 	};
 	const pi = {
-		registerProvider: (provider: string, config: ProviderConfig) => {
-			calls.push({ kind: "register", provider, config });
+		registerProvider: (
+			provider: Provider | string,
+			config?: ProviderConfig,
+		) => {
+			calls.push({
+				kind: "register",
+				provider: typeof provider === "string" ? provider : provider.id,
+				config: typeof provider === "string" ? config : undefined,
+			});
 		},
 		unregisterProvider: (provider: string) => {
 			calls.push({ kind: "unregister", provider });
@@ -332,18 +340,19 @@ async function driveExtension(
 	}
 }
 
-function storedOAuth(access: string): Record<string, unknown> {
+// The stored login pi hands the extension's hooks: an api_key credential whose
+// provider-scoped env carries the URL. `key` is omitted when the login was
+// keyless, exactly as pi persists it.
+function storedLogin(key?: string): Record<string, unknown> {
 	return {
-		type: "oauth",
-		access,
-		refresh: "",
-		expires: Number.MAX_SAFE_INTEGER,
-		baseUrl: FIXTURE_API_ROOT,
+		type: "api_key",
+		...(key === undefined ? {} : { key }),
+		env: { OMLX_BASE_URL: FIXTURE_API_ROOT },
 	};
 }
 
 test("a stored credential decides the fetch and the registration", async () => {
-	storeCredential(storedOAuth(STORED_KEY));
+	storeCredential(storedLogin(STORED_KEY));
 	await driveExtension(
 		{ OMLX_API_KEY: ENV_KEY, OMLX_BASE_URL: OTHER_API_ROOT },
 		async ({ fetches, lastRegistered }) => {
@@ -356,44 +365,15 @@ test("a stored credential decides the fetch and the registration", async () => {
 	);
 });
 
-test("a legacy api_key record keeps its own base URL", async () => {
-	storeCredential({
-		type: "api_key",
-		key: STORED_KEY,
-		baseUrl: FIXTURE_API_ROOT,
-	});
-	await driveExtension(
-		{ OMLX_BASE_URL: OTHER_API_ROOT },
-		async ({ fetches, lastRegistered }) => {
-			assert.equal(fetches[0]?.url, `${FIXTURE_API_ROOT}/models/status`);
-			assert.equal(fetches[0]?.authorization, `Bearer ${STORED_KEY}`);
-			assert.equal(lastRegistered()?.baseUrl, FIXTURE_API_ROOT);
-		},
-	);
-});
-
 test("a stored keyless credential registers keyless while the environment key is set", async () => {
-	storeCredential(storedOAuth(""));
+	storeCredential(storedLogin());
 	await driveExtension(
 		{ OMLX_API_KEY: ENV_KEY },
 		async ({ fetches, lastRegistered }) => {
 			assert.equal(fetches[0]?.url, `${FIXTURE_API_ROOT}/models/status`);
-			assert.equal(fetches[0]?.authorization, undefined);
+			assert.equal(fetches[0]?.authorization, `Bearer ${KEYLESS_PLACEHOLDER}`);
 			assert.equal(lastRegistered()?.apiKey, undefined);
 			assert.equal(lastRegistered()?.authHeader, false);
-		},
-	);
-});
-
-test("a stored api_key with an empty key makes no catalog fetch", async () => {
-	storeCredential({ type: "api_key", key: "" });
-	await driveExtension(
-		{ OMLX_API_KEY: ENV_KEY },
-		async ({ fetches, lastRegistered }) => {
-			assert.deepEqual(fetches, []);
-			assert.equal(lastRegistered()?.baseUrl, undefined);
-			assert.equal(lastRegistered()?.apiKey, undefined);
-			assert.equal(lastRegistered()?.models, undefined);
 		},
 	);
 });
@@ -418,7 +398,7 @@ test("nothing stored and nothing set registers the login-only provider", async (
 });
 
 test("the poll re-fetches with the stored credential while both variables are set", async () => {
-	storeCredential(storedOAuth(STORED_KEY));
+	storeCredential(storedLogin(STORED_KEY));
 	await driveExtension(
 		{ OMLX_API_KEY: ENV_KEY, OMLX_BASE_URL: OTHER_API_ROOT },
 		async ({ fetches, lastRegistered }) => {
@@ -446,7 +426,10 @@ test("a login with an empty key registers keyless while the environment key is s
 			assert.equal(credential.baseUrl, FIXTURE_API_ROOT);
 			assert.equal(fetches.length, before + 1);
 			assert.equal(fetches[before]?.url, `${FIXTURE_API_ROOT}/models/status`);
-			assert.equal(fetches[before]?.authorization, undefined);
+			assert.equal(
+				fetches[before]?.authorization,
+				`Bearer ${KEYLESS_PLACEHOLDER}`,
+			);
 			assert.equal(lastRegistered()?.apiKey, undefined);
 		},
 	);
@@ -473,7 +456,7 @@ test("a keyless registration unregisters the keyed one first", async () => {
 });
 
 test("a steady-state keyless poll unregisters first", async () => {
-	storeCredential(storedOAuth(""));
+	storeCredential(storedLogin());
 	await driveExtension({}, async ({ calls, lastRegistered }) => {
 		const before = calls.length;
 		await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
@@ -488,7 +471,7 @@ test("a steady-state keyless poll unregisters first", async () => {
 });
 
 test("the provider_registered line names the stored source and carries no key", async () => {
-	storeCredential(storedOAuth(STORED_KEY));
+	storeCredential(storedLogin(STORED_KEY));
 	await driveExtension({ PI_OMLX_DEBUG: "1" }, async ({ stderr }) => {
 		const line = stderr().find((chunk) =>
 			chunk.includes("provider_registered"),
@@ -592,7 +575,7 @@ test("a stored credential without a base URL fetches from the default", async ()
 // Requirement 1. Neither test advances the fake clock, so the only thing that
 // can let the body run is the factory resolving on its own.
 test("a request that never answers does not delay a session with cached models", async () => {
-	storeCredential(storedOAuth(STORED_KEY));
+	storeCredential(storedLogin(STORED_KEY));
 	writeCacheFixture(FIXTURE_API_ROOT, [cachedModel("cached-model")]);
 	await driveExtension(
 		{},
@@ -609,7 +592,7 @@ test("a request that never answers does not delay a session with cached models",
 });
 
 test("a request that never answers does not delay a session with no cache", async () => {
-	storeCredential(storedOAuth(STORED_KEY));
+	storeCredential(storedLogin(STORED_KEY));
 	await driveExtension(
 		{},
 		async ({ fetches, lastRegistered }) => {
@@ -629,7 +612,7 @@ function neverAnswered(): Promise<Response> {
 // Requirement 2: the arrived models are registered for pi's model list and
 // pi's own choice of starting model is left alone.
 test("a late catalog registers under omlx and moves no model", async () => {
-	storeCredential(storedOAuth(STORED_KEY));
+	storeCredential(storedLogin(STORED_KEY));
 	await driveExtension({}, async ({ calls, setModels }) => {
 		assert.deepEqual(setModels, []);
 		const registrations = calls.filter((call) => call.kind === "register");
@@ -644,7 +627,7 @@ test("a late catalog registers under omlx and moves no model", async () => {
 
 // Requirement 2, boundary case: a cached start registers under omlx as well.
 test("a cached start registers under omlx without choosing a model", async () => {
-	storeCredential(storedOAuth(STORED_KEY));
+	storeCredential(storedLogin(STORED_KEY));
 	writeCacheFixture(FIXTURE_API_ROOT, [cachedModel("cached-model")]);
 	await driveExtension({}, async ({ calls, setModels }) => {
 		assert.deepEqual(setModels, []);
@@ -662,7 +645,7 @@ test("a cached start registers under omlx without choosing a model", async () =>
 // A second copy of the extension in one process runs like any other pi
 // extension, so a second load registers again instead of skipping.
 test("a second load in one process registers again with no shutdown first", async () => {
-	storeCredential(storedOAuth(STORED_KEY));
+	storeCredential(storedLogin(STORED_KEY));
 	writeCacheFixture(FIXTURE_API_ROOT, [cachedModel("cached-model")]);
 	await driveExtension(
 		{},
@@ -686,7 +669,7 @@ test("a second load in one process registers again with no shutdown first", asyn
 // test, and the cache file is removed first, so only this run's own write can
 // satisfy the assertion.
 test("a successful request registers the fetched models and writes the cache", async () => {
-	storeCredential(storedOAuth(STORED_KEY));
+	storeCredential(storedLogin(STORED_KEY));
 	await driveExtension(
 		{},
 		async ({ fetches, lastRegistered }) => {
@@ -719,7 +702,7 @@ test("a successful request registers the fetched models and writes the cache", a
 
 // Requirement 3: at most one warning per session, through ctx.ui.notify.
 test("a failed load with cached models warns once with the URL and the count", async () => {
-	storeCredential(storedOAuth(STORED_KEY));
+	storeCredential(storedLogin(STORED_KEY));
 	writeCacheFixture(FIXTURE_API_ROOT, [
 		cachedModel("cached-a"),
 		cachedModel("cached-b"),
@@ -740,7 +723,7 @@ test("a failed load with cached models warns once with the URL and the count", a
 });
 
 test("a failed load with no cache warns once naming the login-only provider", async () => {
-	storeCredential(storedOAuth(STORED_KEY));
+	storeCredential(storedLogin(STORED_KEY));
 	await driveExtension(
 		{},
 		async ({ notifies, startSession }) => {
@@ -757,7 +740,7 @@ test("a failed load with no cache warns once naming the login-only provider", as
 });
 
 test("a 200 with nothing registrable warns once and writes no cache", async () => {
-	storeCredential(storedOAuth(STORED_KEY));
+	storeCredential(storedLogin(STORED_KEY));
 	await driveExtension(
 		{},
 		async ({ fetches, notifies, startSession }) => {
@@ -774,7 +757,7 @@ test("a 200 with nothing registrable warns once and writes no cache", async () =
 });
 
 test("a failure before the session starts warns once it does", async () => {
-	storeCredential(storedOAuth(STORED_KEY));
+	storeCredential(storedLogin(STORED_KEY));
 	writeCacheFixture(FIXTURE_API_ROOT, [cachedModel("cached-a")]);
 	await driveExtension(
 		{},
@@ -788,7 +771,7 @@ test("a failure before the session starts warns once it does", async () => {
 });
 
 test("a later success adds no second warning", async () => {
-	storeCredential(storedOAuth(STORED_KEY));
+	storeCredential(storedLogin(STORED_KEY));
 	writeCacheFixture(FIXTURE_API_ROOT, [cachedModel("cached-a")]);
 	let failing = true;
 	await driveExtension(
@@ -812,7 +795,7 @@ test("a later success adds no second warning", async () => {
 // a login-only start fails again on the next tick, and the session starts twice
 // because RPC emits session_start twice on one instance, yet it is told once.
 test("a login-only session warns once, however often it starts or fails again", async () => {
-	storeCredential(storedOAuth(STORED_KEY));
+	storeCredential(storedLogin(STORED_KEY));
 	await driveExtension(
 		{},
 		async ({ notifies, startSession }) => {
@@ -831,7 +814,7 @@ test("a login-only session warns once, however often it starts or fails again", 
 // Requirement 3, the late row: only a session that started login-only is told
 // about models that arrived afterwards.
 test("a late catalog warns once for a session that started login-only", async () => {
-	storeCredential(storedOAuth(STORED_KEY));
+	storeCredential(storedLogin(STORED_KEY));
 	await driveExtension({}, async ({ notifies, startSession }) => {
 		startSession();
 		assert.deepEqual(notifies, [
@@ -844,7 +827,7 @@ test("a late catalog warns once for a session that started login-only", async ()
 });
 
 test("a warm cache whose catalog arrives normally warns about nothing", async () => {
-	storeCredential(storedOAuth(STORED_KEY));
+	storeCredential(storedLogin(STORED_KEY));
 	writeCacheFixture(FIXTURE_API_ROOT, [cachedModel("cached-a")]);
 	await driveExtension({}, async ({ notifies, startSession }) => {
 		startSession();
@@ -863,7 +846,7 @@ test("an unconfigured start that later logs in warns about nothing", async () =>
 			await login(callbacksReturning(FIXTURE_BASE_URL, STORED_KEY));
 			assert.deepEqual(notifies, []);
 			// What pi does with the credential the login returned.
-			storeCredential(storedOAuth(STORED_KEY));
+			storeCredential(storedLogin(STORED_KEY));
 			await vi.advanceTimersByTimeAsync(BACKOFF_BASE_MS);
 			assert.equal(lastRegistered()?.baseUrl, FIXTURE_API_ROOT);
 			assert.deepEqual(notifies, []);
@@ -874,7 +857,7 @@ test("an unconfigured start that later logs in warns about nothing", async () =>
 // The notice decision traces, and its request does too; without the flag,
 // stderr stays empty.
 test("the notice decision traces under PI_OMLX_DEBUG and is silent without it", async () => {
-	storeCredential(storedOAuth(STORED_KEY));
+	storeCredential(storedLogin(STORED_KEY));
 	await driveExtension(
 		{ PI_OMLX_DEBUG: "1" },
 		async ({ stderr, startSession }) => {
@@ -920,7 +903,7 @@ test("the notice decision traces under PI_OMLX_DEBUG and is silent without it", 
 // hasUI, so the notice still reaches the ui it was handed, and stderr carries
 // nothing beyond what the diagnostics spec allows.
 test("a print-mode session with no UI records the warning and writes no stderr", async () => {
-	storeCredential(storedOAuth(STORED_KEY));
+	storeCredential(storedLogin(STORED_KEY));
 	await driveExtension(
 		{},
 		async ({ notifies, startSession, stderr }) => {
@@ -933,7 +916,7 @@ test("a print-mode session with no UI records the warning and writes no stderr",
 });
 
 test("a json-mode session with no UI records the warning and writes no stderr", async () => {
-	storeCredential(storedOAuth(STORED_KEY));
+	storeCredential(storedLogin(STORED_KEY));
 	await driveExtension(
 		{},
 		async ({ notifies, startSession, stderr }) => {
@@ -947,7 +930,7 @@ test("a json-mode session with no UI records the warning and writes no stderr", 
 
 // Requirement 4: a fetch that outlives its session changes nothing.
 test("a fetch that resolves after shutdown leaves the cache alone", async () => {
-	storeCredential(storedOAuth(STORED_KEY));
+	storeCredential(storedLogin(STORED_KEY));
 	writeCacheFixture(FIXTURE_API_ROOT, [cachedModel("cached-before")]);
 	const before = readCacheFixture();
 	const held = heldResponse();
@@ -965,7 +948,7 @@ test("a fetch that resolves after shutdown leaves the cache alone", async () => 
 });
 
 test("a stale fetch that fails outright writes nothing either", async () => {
-	storeCredential(storedOAuth(STORED_KEY));
+	storeCredential(storedLogin(STORED_KEY));
 	writeCacheFixture(FIXTURE_API_ROOT, [cachedModel("cached-before")]);
 	const before = readCacheFixture();
 	const held = heldResponse();
@@ -1006,7 +989,7 @@ function heldResponse(): {
 }
 
 test("a fetch that resolves after shutdown registers nothing and warns nobody", async () => {
-	storeCredential(storedOAuth(STORED_KEY));
+	storeCredential(storedLogin(STORED_KEY));
 	const held = heldResponse();
 	await driveExtension(
 		{},

@@ -1,7 +1,11 @@
 import { strict as assert } from "node:assert";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Provider, RefreshModelsContext } from "@earendil-works/pi-ai";
+import type {
+	Model,
+	Provider,
+	RefreshModelsContext,
+} from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { beforeEach, inject, test, vi } from "vitest";
 import extension from "../index.ts";
@@ -78,6 +82,7 @@ function jsonResponse(body: unknown): Response {
 // A pi that registers a native provider and nothing else: a string registration
 // throws, which is what fails a run that kept the legacy path.
 function fakePi() {
+	let thinkingLevel = "off";
 	const providers: Provider[] = [];
 	const notifies: NotifyCall[] = [];
 	const setModels: unknown[] = [];
@@ -95,7 +100,7 @@ function fakePi() {
 		on: (event: string, handler: Handler) => {
 			handlers.set(event, handler);
 		},
-		getThinkingLevel: () => "off",
+		getThinkingLevel: () => thinkingLevel,
 		setModel: (model: unknown) => {
 			setModels.push(model);
 			return true;
@@ -106,6 +111,11 @@ function fakePi() {
 		providers,
 		notifies,
 		setModels,
+		setThinkingLevel: (level: string) => {
+			thinkingLevel = level;
+		},
+		beforeProviderRequest: (event: unknown, ctx: unknown) =>
+			handlers.get("before_provider_request")?.(event, ctx),
 		startSession: async (
 			shape: SessionShape = { hasUI: true, mode: "rpc" },
 			answers: SessionAnswers = {},
@@ -163,6 +173,8 @@ interface DriveContext {
 	providers: Provider[];
 	notifies: NotifyCall[];
 	setModels: unknown[];
+	setThinkingLevel: (level: string) => void;
+	beforeProviderRequest: (event: unknown, ctx: unknown) => unknown;
 	load: () => Promise<void>;
 	stdout: () => string[];
 	startSession: (
@@ -213,6 +225,8 @@ async function driveExtension(
 			providers: fake.providers,
 			notifies: fake.notifies,
 			setModels: fake.setModels,
+			setThinkingLevel: fake.setThinkingLevel,
+			beforeProviderRequest: fake.beforeProviderRequest,
 			load: async () => {
 				await entry(fake.pi);
 			},
@@ -414,4 +428,97 @@ test("a print-mode start and a json-mode start write nothing to stdout or stderr
 		assert.deepEqual(stderr(), []);
 		assert.deepEqual(stdout(), []);
 	});
+});
+
+// A model as pi's store hands one back on an offline restore.
+function restoredModel(
+	id: string,
+	reasoning: boolean,
+): Model<"openai-completions"> {
+	return {
+		id,
+		name: id,
+		api: "openai-completions",
+		provider: "omlx",
+		baseUrl: FIXTURE_BASE_URL,
+		reasoning,
+		input: ["text"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 32768,
+		maxTokens: 4096,
+	};
+}
+
+async function restoreCatalog(
+	provider: Provider,
+	models: unknown[],
+): Promise<void> {
+	const refresh = provider.refreshModels;
+	assert.ok(refresh, "the registered provider supplies no refreshModels");
+	await refresh({
+		stored: { models: models as Model<"openai-completions">[] },
+		allowNetwork: false,
+		signal: new AbortController().signal,
+		publish: async (publication) => {
+			publication.update?.();
+			return true;
+		},
+	});
+}
+
+// credential-resolution: the thinking controls read the one list the provider
+// serves, so an offline-restored model keeps (or loses) its controls.
+test("an offline-restored model with reasoning false has thinking disabled", async () => {
+	await driveExtension(
+		{},
+		async ({ providers, setThinkingLevel, beforeProviderRequest }) => {
+			const provider = providers[0];
+			assert.ok(provider, "the factory registered no provider");
+			await restoreCatalog(provider, [
+				restoredModel("restored-model", false),
+				restoredModel("thinking-model", true),
+			]);
+			setThinkingLevel("high");
+
+			assert.deepEqual(
+				beforeProviderRequest(
+					{ payload: { model: "restored-model", thinking_budget: 1024 } },
+					{ model: { provider: "omlx", id: "restored-model" } },
+				),
+				{
+					model: "restored-model",
+					thinking_budget: 0,
+					chat_template_kwargs: { enable_thinking: false },
+				},
+			);
+			assert.deepEqual(
+				beforeProviderRequest(
+					{ payload: { model: "thinking-model", thinking_budget: 10240 } },
+					{ model: { provider: "omlx", id: "thinking-model" } },
+				),
+				{ model: "thinking-model", thinking_budget: 10240 },
+			);
+		},
+	);
+});
+
+test("a request for a model in no list is left alone", async () => {
+	await driveExtension(
+		{},
+		async ({ providers, setThinkingLevel, beforeProviderRequest }) => {
+			const provider = providers[0];
+			assert.ok(provider, "the factory registered no provider");
+			setThinkingLevel("high");
+			const payload = { model: "unknown", thinking_budget: 1024 };
+
+			assert.equal(
+				beforeProviderRequest(
+					{ payload },
+					{ model: { provider: "omlx", id: "unknown" } },
+				),
+				undefined,
+				"a model in no list had its payload rewritten",
+			);
+		},
+	);
 });

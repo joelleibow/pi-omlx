@@ -340,3 +340,90 @@ test("stream and streamSimple reach the fake server, call options.onPayload and 
 		assert.equal(payloads.length, 1, `${name} dropped options.onPayload`);
 	}
 });
+
+// The trace moved to the hook pi calls, because the factory has no credential.
+// One line per source change, per provider instance, so a fresh load reports
+// again and no reset export exists.
+// The trace under PI_OMLX_DEBUG, and a way to read back what it wrote.
+function captureTrace(): {
+	lines: () => string[];
+	restore: () => void;
+} {
+	process.env.PI_OMLX_DEBUG = "1";
+	const write = vi
+		.spyOn(process.stderr, "write")
+		.mockImplementation(() => true);
+	return {
+		lines: () =>
+			write.mock.calls
+				.map(([chunk]) => String(chunk))
+				.filter((line) => line.includes("provider_registered")),
+		restore: () => {
+			delete process.env.PI_OMLX_DEBUG;
+			write.mockRestore();
+		},
+	};
+}
+
+test("the provider_registered line reports the stored source and carries no key", async () => {
+	const trace = captureTrace();
+	try {
+		const provider = createOmlxProvider();
+		const apiKey = provider.auth.apiKey;
+		assert.ok(apiKey, "the provider declares no API-key auth");
+		const input = {
+			ctx: stubEnv(),
+			credential: STORED_CREDENTIAL,
+			signal: new AbortController().signal,
+		};
+
+		await apiKey.resolve(input);
+		const lines = trace.lines();
+		assert.equal(lines.length, 1, `lines: ${lines.join("")}`);
+		assert.match(lines[0] ?? "", /"source":"stored"/);
+		assert.ok(
+			!(lines[0] ?? "").includes("stored-key"),
+			`the line carries the key: ${lines[0]}`,
+		);
+
+		// Two resolves in a row report once: the instance remembers its source.
+		await apiKey.resolve(input);
+		assert.equal(trace.lines().length, 1);
+	} finally {
+		trace.restore();
+	}
+});
+
+test("a second provider instance reports the environment source", async () => {
+	const trace = captureTrace();
+	try {
+		const first = createOmlxProvider();
+		const second = createOmlxProvider();
+		const signal = new AbortController().signal;
+		const stored = first.auth.apiKey;
+		const environment = second.auth.apiKey;
+		assert.ok(stored && environment, "a provider declares no API-key auth");
+
+		await stored.resolve({
+			ctx: stubEnv(),
+			credential: STORED_CREDENTIAL,
+			signal,
+		});
+		await environment.resolve({
+			ctx: stubEnv({ OMLX_API_KEY: "environment-key" }),
+			credential: undefined,
+			signal,
+		});
+
+		const lines = trace.lines();
+		assert.equal(lines.length, 2, `lines: ${lines.join("")}`);
+		assert.match(lines[0] ?? "", /"source":"stored"/);
+		assert.match(lines[1] ?? "", /"source":"environment"/);
+		assert.ok(
+			!(lines[1] ?? "").includes("environment-key"),
+			`the line carries the key: ${lines[1]}`,
+		);
+	} finally {
+		trace.restore();
+	}
+});

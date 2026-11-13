@@ -65,9 +65,9 @@ Lands `catalog-discovery`: "A Session Start Warns At Most Once About The Model I
 
 Lands `credential-resolution`: "The Trace Names The Credential Source". Designs D10, D11.
 
-- [ ] 6.1 After an offline restore, `before_provider_request` disables thinking for a model whose `reasoning` is false and preserves pi's budget for one whose `reasoning` is true (D10; `test/thinking.test.ts`'s existing cases, now fed from the provider's list). Failing test: "an offline-restored model with reasoning false has thinking disabled". Boundary case: a model id absent from every list — the handler does nothing.
-- [ ] 6.2 The trace names `stored` for a stored credential and carries no key (D11; "A stored credential reports stored"). Failing test: "the provider_registered line reports the stored source and carries no key". Boundary case: two resolves in a row emit one line — the same instance remembers its last source.
-- [ ] 6.3 The trace names `environment` when nothing is stored, in the same file as 6.2 and through a second provider instance, so no reset seam exists (D11; "The environment reports environment"). Failing test: "a second provider instance reports the environment source". This is how the instance-scoped guard is shown catching the mistake: a module-level guard would suppress this line and the test would see no trace.
+- [x] 6.1 After an offline restore, `before_provider_request` disables thinking for a model whose `reasoning` is false and preserves pi's budget for one whose `reasoning` is true (D10; `test/thinking.test.ts`'s existing cases, now fed from the provider's list). Failing test: "an offline-restored model with reasoning false has thinking disabled". Boundary case: a model id absent from every list — the handler does nothing.
+- [x] 6.2 The trace names `stored` for a stored credential and carries no key (D11; "A stored credential reports stored"). Failing test: "the provider_registered line reports the stored source and carries no key". Boundary case: two resolves in a row emit one line — the same instance remembers its last source.
+- [x] 6.3 The trace names `environment` when nothing is stored, in the same file as 6.2 and through a second provider instance, so no reset seam exists (D11; "The environment reports environment"). Failing test: "a second provider instance reports the environment source". This is how the instance-scoped guard is shown catching the mistake: a module-level guard would suppress this line and the test would see no trace.
 
 ## 7. Joel's checks
 

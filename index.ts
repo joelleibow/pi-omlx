@@ -54,10 +54,13 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 		const activeModel = provider
 			.getModels()
 			.find((model) => model.id === ctx.model?.id);
+		// A model in no list has no default to apply: leave the payload alone
+		// rather than writing thinking off for a model we know nothing about.
+		if (!activeModel) return;
 		return applyOmlxThinkingControls(
 			event.payload,
 			pi.getThinkingLevel(),
-			activeModel?.reasoning,
+			activeModel.reasoning,
 		);
 	});
 }

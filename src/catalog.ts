@@ -151,8 +151,15 @@ export async function refreshOmlxCatalog(
 		},
 	);
 	const registrable = registrableModels(fetched);
-	if (registrable.length === 0)
+	if (registrable.length === 0) {
+		// pi records the throw against omlx; this is the only place the operator
+		// can read what the response actually held.
+		omlxDebug("catalog_refresh_failed", {
+			url: baseUrl,
+			models: fetched.length,
+		});
 		throw new Error(noRegistrableModelMessage(baseUrl, fetched.length));
+	}
 	const published = registrable.map((model) => toProviderModel(model, baseUrl));
 
 	await context.publish({

@@ -9,7 +9,12 @@ import type {
 import { openAICompletionsApi } from "@earendil-works/pi-ai/compat";
 import { PROVIDER_KEY } from "./auth-storage.ts";
 import { type OmlxModel, refreshOmlxCatalog } from "./catalog.ts";
-import { OMLX_BASE_URL_ENV_VAR, resolveOmlx } from "./config.ts";
+import {
+	OMLX_BASE_URL_ENV_VAR,
+	type OmlxCredentialSource,
+	resolveOmlx,
+} from "./config.ts";
+import { omlxDebug } from "./debug.ts";
 import { loginOmlx } from "./login.ts";
 import { FREE_COST } from "./pricing.ts";
 import {
@@ -35,6 +40,9 @@ export function createOmlxProvider(): Provider<"openai-completions"> {
 	// reach, and it can never be this provider's own wrapper.
 	const openAICompletions = openAICompletionsApi();
 	let models: readonly Model<"openai-completions">[] = [];
+	// The last source the trace reported. Per instance, so a fresh load reports
+	// again and no reset seam exists for a test to reach for.
+	let tracedSource: OmlxCredentialSource | undefined;
 
 	const resolve = async (input: {
 		ctx: AuthContext;
@@ -44,6 +52,15 @@ export function createOmlxProvider(): Provider<"openai-completions"> {
 			input.ctx.env(name),
 		);
 		if (!resolution) return undefined;
+		if (resolution.source !== tracedSource) {
+			tracedSource = resolution.source;
+			omlxDebug("provider_registered", {
+				provider: PROVIDER_KEY,
+				models: models.length,
+				streamSimple: true,
+				source: resolution.source,
+			});
+		}
 		return {
 			auth: { apiKey: resolution.apiKey, baseUrl: resolution.baseUrl },
 			env: { [OMLX_BASE_URL_ENV_VAR]: resolution.baseUrl },

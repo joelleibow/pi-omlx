@@ -22,7 +22,7 @@ The package's manifest SHALL declare the name `pi-omlx`, and the lockfile's root
 
 ### Requirement: No Tracked Code Or Metadata Keeps the Old Tokens
 
-A case-insensitive `git grep` over tracked non-Markdown files, excluding `openspec/`, SHALL find neither `pi-omlx-picker` nor `picker`. The manifest's keywords, the lockfile, the singleton key in `index.ts`, the `pickerDebug` helper, the scripts and the tests all fall under this check.
+A case-insensitive `git grep` over tracked non-Markdown files, excluding `openspec/`, SHALL find neither `pi-omlx-picker` nor `picker`.
 
 #### Scenario: The old package name is gone from code and metadata
 

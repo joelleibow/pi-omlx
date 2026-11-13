@@ -62,6 +62,12 @@ The suite SHALL reach pi's stored credential and the extension's catalog cache b
 - **WHEN** a test drives the extension through `session_shutdown` and then loads the extension again
 - **THEN** the extension registers its models again without the test clearing any state the extension keeps
 
+#### Scenario: A second load in one process registers again with no shutdown first
+
+- **WHEN** a test loads the extension a second time in the same process
+- **THEN** the extension registers its models again
+- **AND** the test clears nothing the extension keeps
+
 #### Scenario: Every temporary fixture path is under the root
 
 - **WHEN** a test names a temporary path for a fixture

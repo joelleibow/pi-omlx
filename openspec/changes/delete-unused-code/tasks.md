@@ -123,7 +123,7 @@ Every task is committed separately. A task that checks the shape of its diff mea
 
 ## 6. After The Code
 
-- [ ] 6.1 (Joel's) Diff the post-change dump and the model list against the baselines. Verify: both diffs print nothing, so the models, their limits and their thinking flags are the same.
+- [x] 6.1 (Joel's) Diff the post-change dump and the model list against the baselines. Verify: both diffs print nothing, so the models, their limits and their thinking flags are the same.
 
   Exact commands. The dump reads the copies and writes under `/tmp/omlx-parity/`; the list command is a normal pi start, as in 1.1:
 
@@ -145,3 +145,5 @@ Every task is committed separately. A task that checks the shape of its diff mea
   - Traces to: design step 10, decision 13; owner-rulings §1's acceptance sentence.
 
 Two steps follow this list and are neither tasks nor code: the docs pass, which corrects the Markdown this change makes false, and only then the archive, which merges the two delta specs.
+
+  - Joel, 2026-11-12, at `d643f88`, running `node_modules/.bin/tsx /tmp/omlx-parity/dump.ts` and `pi --list-models omlx` and diffing each against 1.1's baseline: "dump ok", "dump same", "list same".

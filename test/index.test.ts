@@ -355,8 +355,12 @@ test("an oauth-shaped entry shows the remedy and nothing else", async () => {
 		await startSession();
 		assert.equal(notifies.length, 1, "the start did not show one warning");
 		const message = notifies[0]?.message ?? "";
-		assert.match(message, /\/logout/);
-		assert.match(message, /\/login/);
+		// pi's /logout takes no provider argument: the remedy says to choose
+		// OMLX there, and to pass the provider to /login instead.
+		assert.ok(!message.includes("/logout omlx"), message);
+		assert.match(message, /run \/logout/);
+		assert.match(message, /choose OMLX/);
+		assert.match(message, /\/login omlx/);
 		assert.ok(message.indexOf("/logout") < message.indexOf("/login"), message);
 		assert.ok(
 			!message.includes("/model"),

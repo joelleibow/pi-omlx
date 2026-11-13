@@ -1,6 +1,10 @@
-/** Ruling B's remedy for a stored entry pi no longer reads (D8, D9). */
+/**
+ * Ruling B's remedy for a stored entry pi no longer reads (D8, D9). `/logout`
+ * takes no provider argument in pi 1.5.2 — it opens the selector — while
+ * `/login` does take one.
+ */
 const OAUTH_REMEDY =
-	"oMLX still holds an old OAuth-style login that pi no longer reads; run /logout omlx, then /login omlx.";
+	"oMLX still holds an old OAuth-style login that pi no longer reads; run /logout, choose OMLX, then run /login omlx.";
 
 /** Ruling C1's warning for a start that holds no oMLX model to run on. */
 const NO_MODELS =

@@ -42,8 +42,12 @@ test("an oauth-shaped entry takes the remedy, whatever omlx reports", () => {
 				modelCount,
 			});
 			assert.ok(notice, `no remedy for ${configured}/${modelCount}`);
-			assert.match(notice, /\/logout/);
-			assert.match(notice, /\/login/);
+			// pi 1.5.2's /logout takes no provider argument - it opens the
+			// selector - while /login does take one.
+			assert.ok(!notice.includes("/logout omlx"), notice);
+			assert.match(notice, /run \/logout/);
+			assert.match(notice, /choose OMLX/);
+			assert.match(notice, /\/login omlx/);
 			assert.ok(notice.indexOf("/logout") < notice.indexOf("/login"), notice);
 			assert.ok(!notice.includes("/model"), notice);
 		}

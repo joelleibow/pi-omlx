@@ -1,4 +1,8 @@
 import type {
+	OAuthCredentials,
+	OAuthLoginCallbacks,
+} from "@earendil-works/pi-ai";
+import type {
 	ExtensionAPI,
 	ExtensionUIContext,
 } from "@earendil-works/pi-coding-agent";
@@ -14,17 +18,17 @@ import {
 import {
 	KEYLESS_PLACEHOLDER,
 	OMLX_API_KEY_ENV_VAR,
-	OMLX_BASE_URL_ENV_VAR,
 	type OmlxResolution,
 	resolveOmlx,
 } from "./src/config.ts";
 import { omlxDebug } from "./src/debug.ts";
-import { catalogNotice, type RefreshResult } from "./src/notice.ts";
 import {
-	createLoginOmlx,
 	getOmlxApiKey,
+	loginOmlx,
+	OMLX_CREDENTIAL_EXPIRES,
 	refreshOmlxToken,
-} from "./src/oauth-login.ts";
+} from "./src/login.ts";
+import { catalogNotice, type RefreshResult } from "./src/notice.ts";
 import { toProviderConfig } from "./src/provider.ts";
 import { applyOmlxThinkingControls } from "./src/thinking.ts";
 
@@ -175,25 +179,33 @@ async function startPolling(
 function buildOmlxOauth(pi: ExtensionAPI, state: State) {
 	return {
 		name: "OMLX",
-		login: createLoginOmlx(async (baseUrl, apiKey) => {
-			const credential = await resolveOmlx(
-				{
-					key: apiKey || undefined,
-					env: { [OMLX_BASE_URL_ENV_VAR]: baseUrl },
-				},
-				noEnvironment,
-			);
-			if (!credential) {
-				return {
-					ok: false as const,
-					error: "the login produced no credential",
-				};
+		login: async (
+			callbacks: OAuthLoginCallbacks,
+		): Promise<OAuthCredentials> => {
+			const credential = await loginOmlx({
+				signal: callbacks.signal ?? new AbortController().signal,
+				prompt: (prompt) =>
+					callbacks.onPrompt({
+						message: prompt.message,
+						placeholder:
+							prompt.type === "select" ? undefined : prompt.placeholder,
+						allowEmpty: prompt.type === "secret",
+					}),
+				notify: () => {},
+			});
+			const resolved = await resolveOmlx(credential, noEnvironment);
+			if (!resolved) throw new Error("the login produced no credential");
+			const result = await fetchAndRegister(pi, state, resolved);
+			if (result !== "registered") {
+				throw new Error(state.lastError ?? "unknown error");
 			}
-			const result = await fetchAndRegister(pi, state, credential);
-			return result === "registered"
-				? { ok: true as const }
-				: { ok: false as const, error: state.lastError ?? "unknown error" };
-		}),
+			return {
+				access: credential.key ?? "",
+				refresh: "",
+				expires: OMLX_CREDENTIAL_EXPIRES,
+				baseUrl: resolved.baseUrl,
+			};
+		},
 		refreshToken: refreshOmlxToken,
 		getApiKey: getOmlxApiKey,
 	};

@@ -424,12 +424,13 @@ test("a login with an empty key registers keyless while the environment key is s
 			const credential = await login(callbacksReturning(FIXTURE_BASE_URL, ""));
 			assert.equal(credential.access, "");
 			assert.equal(credential.baseUrl, FIXTURE_API_ROOT);
-			assert.equal(fetches.length, before + 1);
-			assert.equal(fetches[before]?.url, `${FIXTURE_API_ROOT}/models/status`);
-			assert.equal(
-				fetches[before]?.authorization,
-				`Bearer ${KEYLESS_PLACEHOLDER}`,
-			);
+			// The login probes with the credential, then registers the catalog
+			// under it; both requests are keyless.
+			assert.equal(fetches.length, before + 2);
+			for (const request of fetches.slice(before)) {
+				assert.equal(request.url, `${FIXTURE_API_ROOT}/models/status`);
+				assert.equal(request.authorization, `Bearer ${KEYLESS_PLACEHOLDER}`);
+			}
 			assert.equal(lastRegistered()?.apiKey, undefined);
 		},
 	);

@@ -375,6 +375,9 @@ async function getJson(
 		signal,
 	}).catch((err) => {
 		if (err instanceof Error && err.name === "AbortError") {
+			// A caller's abort is not our timeout: it must not become a fallback
+			// request on a signal that is already cancelled.
+			if (parent?.aborted) throw err;
 			throw new Error(`GET ${url} timed out after ${timeoutMs}ms`);
 		}
 		throw err;

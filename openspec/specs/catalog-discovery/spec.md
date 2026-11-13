@@ -5,124 +5,148 @@ Defines what the extension does about the oMLX model catalog at a session's star
 
 ## Requirements
 
-### Requirement: Startup Never Waits On The Catalog
+### Requirement: Pi's Refresh Decides When The Catalog Is Fetched
 
-The extension's factory SHALL resolve without awaiting any catalog request. Before it resolves, the extension SHALL register the models cached for the resolved base URL, or the login-only provider when no cache covers that URL. The catalog request SHALL continue after the factory resolves. Which credential decides the request, and the cases that make no request, stay as `openspec/specs/credential-resolution/spec.md` states them.
+The extension SHALL supply `refreshModels` and SHALL NOT fetch the catalog on a timer. pi calls the hook at a session's start, after a login, when `/model` opens, and at RPC startup, and never on a schedule (`research-chidi.md` addendum `ebf305b8` Q2; ruling A).
 
-#### Scenario: An unresponsive server does not delay a cached start
+#### Scenario: A session start restores the stored catalog without a network request
 
-- **WHEN** a stored credential resolves to a base URL whose cache holds models with positive limits, and the server accepts the connection without answering
-- **THEN** the factory resolves with those cached models registered
-- **AND** it resolves without waiting for the request to time out
+- **WHEN** a stored catalog covers `omlx` and a session starts
+- **THEN** the offline phase publishes it before the session exists
+- **AND** no network request is made before the session exists
 
-#### Scenario: A session with no cache starts login-only
+#### Scenario: A login refreshes the catalog
 
-- **WHEN** the resolved base URL holds no cache
-- **THEN** the factory resolves with the login-only provider registered
-- **AND** no catalog result was awaited before it resolved
+- **WHEN** a login completes
+- **THEN** pi refreshes `omlx`'s catalog with the network allowed
 
-#### Scenario: The catalog request continues after startup
+#### Scenario: `/model` refreshes the catalog
 
-- **WHEN** the factory has resolved for a configured credential
-- **THEN** the extension still requests the catalog
-- **AND** the models the response holds with positive `contextWindow` and `maxTokens` are registered and written to the cache
+- **WHEN** the model picker opens
+- **THEN** pi refreshes `omlx`'s catalog with the network allowed
 
-### Requirement: A Session That Starts Without A Catalog Stays As Pi Left It
+#### Scenario: No timer refreshes the catalog
 
-When no cached catalog covers the resolved base URL, the extension SHALL register the login-only provider and SHALL NOT choose the session's starting model. When the catalog arrives, the extension SHALL NOT change that model: it SHALL NOT call `pi.setModel`, and it SHALL NOT re-run pi's starting-model selection. The arrived models SHALL be registered under `omlx`, so the user can choose one through pi's model picker.
+- **WHEN** a session runs with no login, no `/model` and no restart
+- **THEN** the extension makes no catalog request
+- **AND** a change on the server appears only at the next of those triggers
 
-#### Scenario: A late catalog moves no model
+### Requirement: A Session Start Waits For No Network Fetch
 
-- **WHEN** a session starts with no cache and the catalog arrives after that
-- **THEN** the extension makes no `setModel` call for the arrived models
-- **AND** it does not re-run pi's starting-model selection
+Only the offline restore phase SHALL run before a session exists. The network refresh SHALL NOT delay a session's start, whether or not a stored catalog covers `omlx` (`research-chidi.md` addendum `ebf305b8` Q2, Q4).
 
-#### Scenario: The late catalog registers under omlx
+#### Scenario: An unresponsive server does not delay a start with a stored catalog
 
-- **WHEN** the catalog arrives for a session that started with the login-only provider
-- **THEN** `registerProvider` is called with the id `omlx` and the fetched models
+- **WHEN** a stored catalog covers `omlx` and the server accepts the connection without answering
+- **THEN** the session starts with the stored models published
+- **AND** it starts without waiting for the request to time out
 
-### Requirement: One Warning Per Session When The Catalog Fails Or Lands Late
+#### Scenario: An unresponsive server does not delay a start with no stored catalog
 
-The extension SHALL show at most one warning per session, only through pi's `ctx.ui.notify`, and SHALL write nothing to stderr beyond what `openspec/specs/diagnostics/spec.md` allows. The warning fires when the catalog fails to load, a response with no registrable model counting as a failure, naming the resolved base URL and whether cached models or the login-only provider are in use. It fires for a late catalog only when the session started login-only.
+- **WHEN** no stored catalog covers `omlx` and the server accepts the connection without answering
+- **THEN** the session starts
+- **AND** it starts without waiting for the request to time out
 
-#### Scenario: A failed request warns once, naming the URL and the cached models
+#### Scenario: The network refresh continues after the session starts
 
-- **WHEN** a catalog request fails while cached models are registered
-- **THEN** one warning names the resolved base URL
-- **AND** it says the session is using cached models
+- **WHEN** the session exists and the network refresh is still running
+- **THEN** the models the response holds are published when it answers
 
-#### Scenario: A failure with no cache names the login-only provider
+### Requirement: The Catalog Lives In Pi's Model Store
 
-- **WHEN** a catalog request fails while the login-only provider is registered
-- **THEN** one warning names the resolved base URL
-- **AND** it says the login-only provider is in use
+The extension SHALL publish a catalog through `context.publish({ persist, update })` and SHALL NOT write a catalog cache of its own. pi SHALL store the published catalog in its model store under pi's agent directory, keyed `omlx`, and SHALL restore it in the offline phase (`research-chidi.md` addendum `ebf305b8` Q1).
 
-#### Scenario: A response with nothing registrable counts as a failure
+#### Scenario: A successful network refresh persists under omlx
 
-- **WHEN** the server answers 200 with no model holding positive `contextWindow` and `maxTokens`
-- **THEN** one warning is shown for that load
-- **AND** no cache is written for it
+- **WHEN** the network phase publishes models
+- **THEN** pi's model store holds them under `omlx`
+- **AND** no `cache/omlx-models.json` is written
 
-#### Scenario: A failure before the session starts still warns
+#### Scenario: A start reads the store, not a cache of the extension's
 
-- **WHEN** a catalog request fails before `session_start` fires for the session
-- **THEN** the session shows one warning once it starts
+- **WHEN** a session starts and pi's model store holds a catalog for `omlx`
+- **THEN** those models are published without a network request
 
-#### Scenario: A later success adds no second warning
+#### Scenario: A failed refresh keeps the stored catalog
 
-- **WHEN** the first catalog request of a session fails and a later one succeeds
-- **THEN** the session has shown one warning
+- **WHEN** the network phase throws or publishes nothing
+- **THEN** the store and the published list hold what they held before
 
-#### Scenario: A late catalog warns when the session started login-only
+#### Scenario: A response with one model lacking limits publishes the rest
 
-- **WHEN** a session starts with no cache and the catalog arrives after startup
-- **THEN** one warning names the resolved base URL
-- **AND** it says the session started with the login-only provider
-- **AND** it says the models from that URL are now available
+- **WHEN** the network phase's response holds one model with positive context and output limits and one without
+- **THEN** the one with limits is published and the other is skipped
+- **AND** the skipped one does not count as a failure (`index.ts:324-325` at HEAD filters the same way)
 
-#### Scenario: A warm cache warns about nothing
+### Requirement: A Refresh That Is Superseded Or Aborted Publishes Nothing
 
-- **WHEN** cached models are registered at startup and the catalog arrives after startup without a failed load
+A publish whose refresh was aborted or superseded SHALL write nothing and change nothing: pi rejects it before the store write and before the in-memory swap (`research-chidi.md` addendum `ebf305b8` Q1).
+
+#### Scenario: An aborted refresh publishes nothing
+
+- **WHEN** a refresh's signal aborts before its publish
+- **THEN** the store and the published list are unchanged
+
+#### Scenario: A superseded refresh publishes nothing
+
+- **WHEN** a newer refresh of `omlx` starts before an older one publishes
+- **THEN** the older one's publish changes nothing
+
+### Requirement: A Session Start Warns At Most Once About The Model It Landed On
+
+At a session's start the extension SHALL show at most one warning. For an OAuth-shaped stored `omlx` entry it SHALL be ruling B's `/logout` then `/login` remedy; otherwise, when `omlx` resolves as configured and pi holds no `omlx` model, it SHALL warn that the session landed on another provider's model and name `/model`. A configured start with models, and an unconfigured start, SHALL show nothing (`owner-rulings.md`, 2026-11-12 C1; `council.md` C1).
+
+#### Scenario: A configured start with no models warns once
+
+- **WHEN** a session starts, `omlx` resolves as configured, and pi holds no `omlx` model
+- **THEN** one warning says the session landed on another provider's model
+- **AND** it names `/model` as the way to switch
+- **AND** that start shows no second warning
+
+#### Scenario: A configured start with models warns about nothing
+
+- **WHEN** a session starts, `omlx` resolves as configured, and pi holds at least one `omlx` model
 - **THEN** no warning is shown
 
-#### Scenario: An unconfigured credential warns about nothing
+#### Scenario: The OAuth-shaped entry takes the warning
 
-- **WHEN** no credential is configured, so no catalog request is made
-- **THEN** no warning is shown for the session
+- **WHEN** the stored `omlx` entry is `oauth`-typed, whatever `omlx` reports
+- **THEN** the only warning names `/logout` then `/login`
+- **AND** the landed-model warning is not shown
 
-#### Scenario: A run with no session UI writes nothing extra
+#### Scenario: An unconfigured start warns about nothing
 
-- **WHEN** a warning fires while pi runs in print or JSON mode
-- **THEN** the extension writes nothing to stderr that `openspec/specs/diagnostics/spec.md` does not allow
+- **WHEN** nothing configures `omlx`
+- **THEN** no warning is shown
 
-### Requirement: A Fetch That Outlives Its Session Changes Nothing
+#### Scenario: The configured state comes from pi's provider auth status
 
-A catalog fetch that resolves after its session ended SHALL change nothing: it SHALL NOT register a provider, SHALL NOT write the cache and SHALL NOT warn. The session's end SHALL stop the poll's own fallback as well as the fetch's result.
+- **WHEN** the extension decides whether to warn
+- **THEN** it treats a defined answer from `getProviderAuth("omlx")` as configured, and a rejection as unconfigured
+- **AND** it never reads `hasConfiguredAuth` with a provider id, which takes a model and would report false (`model-registry.js:31-33`; measured in `scratch-michael/has-configured.mjs`)
 
-#### Scenario: A fetch resolving after shutdown registers nothing and caches nothing
+#### Scenario: The model count is the list pi chose from
 
-- **WHEN** a session shuts down with a catalog fetch pending and that fetch then resolves
-- **THEN** no `registerProvider` call follows the shutdown
-- **AND** the cache file is not written
+- **WHEN** the extension decides whether the start landed on another provider's model
+- **THEN** it counts the models `provider.getModels()` serves
+- **AND** it reads no catalog list of its own (`research-chidi.md` addendum `ebf305b8` Q4)
 
-#### Scenario: A fetch resolving after shutdown warns nobody
+#### Scenario: A run with no session UI writes nothing
 
-- **WHEN** a session shuts down with a catalog fetch pending and that fetch then resolves
-- **THEN** no `notify` call follows the shutdown
+- **WHEN** the session runs in print or json mode and the warning's state holds
+- **THEN** nothing is written to stdout or stderr (`runner.js:132-136`, `print-mode.js:60`)
 
-### Requirement: The Cache Follows The Agent Directory
+### Requirement: The Extension Never Chooses The Session's Model
 
-The extension SHALL derive the catalog cache file location from pi's agent directory at each read and at each write, not once when the module loads. A cache write after pi's agent directory changes SHALL land under the new directory, and a cache read after the change SHALL look there.
+A catalog that arrives after a session started SHALL NOT change the session's model: the extension SHALL NOT call `pi.setModel` and SHALL NOT re-run pi's starting-model selection. The published models SHALL be selectable through pi's model picker (`research-chidi.md` addendum `ebf305b8` Q4, Q6, Q7).
 
-#### Scenario: A write after the agent directory changes lands under the new directory
+#### Scenario: A catalog arriving after startup moves no model
 
-- **WHEN** pi's agent directory changes after the extension's catalog module has loaded and the extension then writes the catalog cache
-- **THEN** the cache file exists under the new agent directory, holding that write's base URL
-- **AND** no cache for that write's base URL is written under the agent directory in force at load
+- **WHEN** a session starts and the catalog is published after that
+- **THEN** the extension makes no `setModel` call
+- **AND** it does not re-run pi's starting-model selection
 
-#### Scenario: A read follows the agent directory in force when it runs
+#### Scenario: The published models are selectable
 
-- **WHEN** a cached catalog exists under a temporary agent directory and pi's agent directory then changes to one that holds no cache
-- **THEN** the cache read made while the first directory was in force reports the models it holds
-- **AND** the read made after the change reports no models
+- **WHEN** a refresh publishes models for `omlx`
+- **THEN** pi's model picker lists them under `omlx`

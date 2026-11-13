@@ -1,6 +1,5 @@
 import type {
 	ApiKeyCredential,
-	OAuthCredentials,
 	ProviderAuthInteraction,
 } from "@earendil-works/pi-ai";
 import {
@@ -16,11 +15,6 @@ import {
 	resolveOmlx,
 } from "./config.ts";
 import { omlxDebug } from "./debug.ts";
-
-// OMLX keys never expire, but pi needs a finite number: Infinity serializes to
-// null in auth.json, which pi reads as already expired (refreshing on every
-// request) and its read-only auth check rejects as an invalid auth.json.
-export const OMLX_CREDENTIAL_EXPIRES = Number.MAX_SAFE_INTEGER;
 
 /**
  * Pi's native API-key login for omlx: the prompted base URL as the credential's
@@ -80,15 +74,4 @@ const noEnvironment = async (): Promise<string | undefined> => undefined;
 
 function cancelled(): Error {
 	return new Error("The OMLX login was cancelled.");
-}
-
-export function refreshOmlxToken(
-	credentials: OAuthCredentials,
-): Promise<OAuthCredentials> {
-	// Also repairs credentials stored by older versions with expires: null.
-	return Promise.resolve({ ...credentials, expires: OMLX_CREDENTIAL_EXPIRES });
-}
-
-export function getOmlxApiKey(credentials: OAuthCredentials): string {
-	return typeof credentials.access === "string" ? credentials.access : "";
 }

@@ -7,7 +7,6 @@ import type {
 	Provider,
 } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/compat";
-import type { ProviderConfig } from "@earendil-works/pi-coding-agent";
 import { PROVIDER_KEY } from "./auth-storage.ts";
 import { type OmlxModel, refreshOmlxCatalog } from "./catalog.ts";
 import { OMLX_BASE_URL_ENV_VAR, resolveOmlx } from "./config.ts";
@@ -90,32 +89,6 @@ export function createOmlxProvider(): Provider<"openai-completions"> {
 				resolveFirstDeltaTimeoutMs(),
 			),
 	};
-}
-
-export function toProviderConfig(
-	apiRoot: string,
-	apiKeyEnvVar: string,
-	models: OmlxModel[],
-	options: { keyless?: boolean } = {},
-): ProviderConfig {
-	const config: ProviderConfig = {
-		baseUrl: apiRoot,
-		api: "openai-completions",
-		// Keyless server (skip_api_key_verification): no auth header. Pi rejects
-		// authHeader:true with no key, and resolveConfigValueOrThrow would throw
-		// on an unset $OMLX_API_KEY — so both apiKey and authHeader stay off.
-		authHeader: !options.keyless,
-		streamSimple: (model, context, streamOptions) =>
-			streamOmlxOpenAICompletions(
-				model,
-				context,
-				streamOptions,
-				resolveFirstDeltaTimeoutMs(),
-			),
-		models: models.map((model) => toProviderModel(model, apiRoot)),
-	};
-	if (!options.keyless) config.apiKey = `$${apiKeyEnvVar}`;
-	return config;
 }
 
 function requirePositive(

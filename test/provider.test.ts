@@ -1,49 +1,19 @@
 import { strict as assert } from "node:assert";
 import {
-	type AssistantMessageEventStream,
 	type ApiKeyCredential,
+	type AssistantMessageEventStream,
 	type Model,
 	type ModelsPublication,
 	type ModelsStoreEntry,
 	normalizeContext,
 	type RefreshModelsContext,
 } from "@earendil-works/pi-ai";
-import type { ProviderModelConfig } from "@earendil-works/pi-coding-agent";
 import { afterEach, test, vi } from "vitest";
 import { KEYLESS_PLACEHOLDER } from "../src/config.ts";
-import { createOmlxProvider, toProviderConfig } from "../src/provider.ts";
+import { createOmlxProvider, toProviderModel } from "../src/provider.ts";
 
-// The registered models are a union of chat, image and classifier entries, and
-// only the chat member carries `reasoning` and `compat`. Narrow once so a model
-// that is not a chat entry fails loudly instead of skipping an assertion.
-function chatModel(m: ProviderModelConfig | undefined) {
-	if (m === undefined) throw new Error("no model entry");
-	if (m.type !== undefined && m.type !== "chat")
-		throw new Error(`not a chat model: ${m.type}`);
-	return m;
-}
-
-test("toProviderConfig marks apiKey env var references explicitly", () => {
-	const config = toProviderConfig("http://example.test/v1", "OMLX_API_KEY", []);
-
-	assert.equal(config.apiKey, "$OMLX_API_KEY");
-	assert.equal(config.authHeader, true);
-});
-
-test("toProviderConfig omits apiKey and auth header for keyless servers", () => {
-	const config = toProviderConfig(
-		"http://example.test/v1",
-		"OMLX_API_KEY",
-		[],
-		{ keyless: true },
-	);
-
-	assert.equal(config.apiKey, undefined);
-	assert.equal(config.authHeader, false);
-});
-
-test("toProviderConfig marks only explicit thinking_default true as reasoning capable", () => {
-	const config = toProviderConfig("http://example.test/v1", "OMLX_API_KEY", [
+test("toProviderModel marks only explicit thinking_default true as reasoning capable", () => {
+	const models = [
 		{
 			id: "qwen",
 			thinkingDefault: true,
@@ -64,32 +34,32 @@ test("toProviderConfig marks only explicit thinking_default true as reasoning ca
 			contextWindow: 32768,
 			maxTokens: 8192,
 		},
-	]);
+	].map((model) => toProviderModel(model, BASE_URL));
 
-	assert.equal(chatModel(config.models?.[0]).reasoning, true);
-	assert.equal(chatModel(config.models?.[1]).reasoning, false);
-	assert.equal(chatModel(config.models?.[2]).reasoning, false);
-	assert.equal(chatModel(config.models?.[3]).reasoning, false);
-	assert.deepEqual(chatModel(config.models?.[0]).compat, {
+	assert.equal(models[0]?.reasoning, true);
+	assert.equal(models[1]?.reasoning, false);
+	assert.equal(models[2]?.reasoning, false);
+	assert.equal(models[3]?.reasoning, false);
+	assert.deepEqual(models[0]?.compat, {
 		supportsDeveloperRole: false,
 		supportsReasoningEffort: false,
 		supportsLongCacheRetention: true,
 		maxTokensField: "max_tokens",
 		thinkingFormat: "qwen-chat-template",
 	});
-	assert.deepEqual(chatModel(config.models?.[1]).compat, {
+	assert.deepEqual(models[1]?.compat, {
 		supportsDeveloperRole: false,
 		supportsReasoningEffort: false,
 		supportsLongCacheRetention: true,
 		maxTokensField: "max_tokens",
 	});
-	assert.deepEqual(chatModel(config.models?.[2]).compat, {
+	assert.deepEqual(models[2]?.compat, {
 		supportsDeveloperRole: false,
 		supportsReasoningEffort: false,
 		supportsLongCacheRetention: true,
 		maxTokensField: "max_tokens",
 	});
-	assert.deepEqual(chatModel(config.models?.[3]).compat, {
+	assert.deepEqual(models[3]?.compat, {
 		supportsDeveloperRole: false,
 		supportsReasoningEffort: false,
 		supportsLongCacheRetention: true,
@@ -97,8 +67,8 @@ test("toProviderConfig marks only explicit thinking_default true as reasoning ca
 	});
 });
 
-test("toProviderConfig maps displayName to Pi name and keeps OMLX-only settings out of provider model", () => {
-	const config = toProviderConfig("http://example.test/v1", "OMLX_API_KEY", [
+test("toProviderModel maps displayName to Pi name and keeps OMLX-only settings out of provider model", () => {
+	const models = [
 		{
 			id: "raw-model-id",
 			displayName: "Human Model Name",
@@ -108,9 +78,9 @@ test("toProviderConfig maps displayName to Pi name and keeps OMLX-only settings 
 			reasoningParser: "qwen",
 			thinkingDefault: true,
 		},
-	]);
+	].map((entry) => toProviderModel(entry, BASE_URL));
 
-	const model = config.models?.[0] as unknown as Record<string, unknown>;
+	const model = models[0] as unknown as Record<string, unknown>;
 	assert.equal(model.name, "Human Model Name");
 	assert.equal(model.id, "raw-model-id");
 	assert.equal("archContextWindow" in model, false);
@@ -258,7 +228,9 @@ test("resolve returns auth, env.OMLX_BASE_URL and source for a stored credential
 	);
 
 	// A trace would belong to resolve alone: check is side-effect free.
-	const write = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+	const write = vi
+		.spyOn(process.stderr, "write")
+		.mockImplementation(() => true);
 	process.env.PI_OMLX_DEBUG = "1";
 	try {
 		await apiKey.check({ ctx, credential: STORED_CREDENTIAL, signal });
@@ -271,7 +243,6 @@ test("resolve returns auth, env.OMLX_BASE_URL and source for a stored credential
 		write.mockRestore();
 	}
 });
-
 
 const CHAT_MODEL: Model<"openai-completions"> = {
 	id: "chat-model",
@@ -297,7 +268,8 @@ function failingFetch(requests: StreamRequest[]): typeof fetch {
 	return (async (url: string | URL | Request, init?: RequestInit) => {
 		requests.push({
 			url: String(url),
-			authorization: new Headers(init?.headers).get("authorization") ?? undefined,
+			authorization:
+				new Headers(init?.headers).get("authorization") ?? undefined,
 		});
 		return new Response(JSON.stringify({ error: { message: "boom" } }), {
 			status: 500,

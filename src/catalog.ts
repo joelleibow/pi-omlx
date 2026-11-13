@@ -1,13 +1,12 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import type {
 	AnyModel,
 	Model,
 	RefreshModelsContext,
 } from "@earendil-works/pi-ai";
 import { isModelType } from "@earendil-works/pi-ai";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { KEYLESS_PLACEHOLDER, OMLX_BASE_URL_ENV_VAR } from "./config.ts";
 import { omlxDebug } from "./debug.ts";
 import { toProviderModel } from "./provider.ts";
@@ -515,46 +514,6 @@ function applyModelSettingsEntry(
 	if (typeof entry.model_type_override === "string")
 		next.modelType = entry.model_type_override.toLowerCase();
 	return next;
-}
-
-// Derived per call, not captured at import: pi resolves the agent directory on
-// every call, and a path captured at load can point at a directory the process
-// has left (catalog-discovery).
-function catalogCachePath(): string {
-	return join(getAgentDir(), "cache", "omlx-models.json");
-}
-
-interface CachedCatalog {
-	apiRoot: string;
-	models: OmlxModel[];
-}
-
-export function readCatalogCache(apiRoot: string): OmlxModel[] | undefined {
-	const data = readCatalogCacheFile();
-	if (!data || data.apiRoot !== apiRoot) return undefined;
-	return data.models;
-}
-
-function readCatalogCacheFile(): CachedCatalog | undefined {
-	try {
-		const raw = readFileSync(catalogCachePath(), "utf-8");
-		const data = JSON.parse(raw) as CachedCatalog;
-		if (!Array.isArray(data.models)) return undefined;
-		return data;
-	} catch {
-		return undefined;
-	}
-}
-
-export function writeCatalogCache(apiRoot: string, models: OmlxModel[]): void {
-	try {
-		const file = catalogCachePath();
-		mkdirSync(dirname(file), { recursive: true });
-		const data: CachedCatalog = { apiRoot, models };
-		writeFileSync(file, JSON.stringify(data, null, 2));
-	} catch {
-		// Ignore write errors — cache is best-effort
-	}
 }
 
 export function resolveLocalModelSettingsPath(

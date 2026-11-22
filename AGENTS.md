@@ -15,7 +15,7 @@ Dependencies come from `npm install`. [CONTRIBUTING.md](./CONTRIBUTING.md) also 
 ## Conventions
 
 - Markdown documentation lives in `docs/`, decisions in `docs/adr/`, and the system's shape in `ARCHITECTURE.md`. This file carries commands, conventions and traps only.
-- New tests reach pi's stored credential and its catalog cache by pointing `PI_CODING_AGENT_DIR` at a per-test directory, never through a seam in production code.
+- New tests reach pi's stored credential and its model store by pointing `PI_CODING_AGENT_DIR` at a per-test directory, never through a seam in production code.
 - Every temporary path a fixture names comes from `inject("isolationRoot")`: created there when the test needs a directory, and named there without being created when it needs a path that must not exist. `rg -n 'tmpdir' test` reports matches only in `test/isolation/global-setup.ts`.
 - Add any new path a test reads outside the repository to the guard's list in `test/isolation/worker-setup.ts`, and any new `process.env` key the extension reads to `CALLER_ENV_KEYS` in `test/isolation/global-setup.ts`; otherwise a path can escape and a caller's key can reach the run.
 - No suppressions: `@ts-ignore`, `@ts-expect-error`, `@ts-nocheck` and `biome-ignore` are forbidden by the repository's `verification` spec.
@@ -24,4 +24,6 @@ Dependencies come from `npm install`. [CONTRIBUTING.md](./CONTRIBUTING.md) also 
 
 - The suite overrides `HOME` and `PI_CODING_AGENT_DIR` and clears the extension's own environment keys, so exporting one of them for a run changes nothing: `PI_OMLX_DEBUG=1 npm test` traces nothing. A test that needs its own agent directory sets it inside the test, as `test/index.test.ts` does.
 - The extension reads Pi's `auth.json` and never writes it. Storing a login is Pi's job, so code that writes a credential there is wrong even when it makes a test pass.
-- The credential resolution restates pi-ai's order and carries a `shortcut:` comment naming that mirror. Re-check it when the Pi version moves, and read `docs/adr/0001-one-credential-decides-the-omlx-connection.md` before changing which credential wins.
+- The credential resolution runs inside Pi's `check` and `resolve` hooks, and Pi's contract keeps `check` side-effect free: the `provider_registered` trace line lives in `resolve`, and a test asserts `check` writes nothing. Read `docs/adr/0002-the-credential-resolution-runs-in-pi-hooks.md` before changing which credential wins.
+- A keyless login still sends `Authorization: Bearer local`. The OpenAI-completions client throws on an empty key, so a login with no key is a placeholder on the wire, never an empty bearer.
+- `pi auth login` and `pi auth check` never load extensions, so neither can reach `omlx`. Only `/login omlx` inside a session does.

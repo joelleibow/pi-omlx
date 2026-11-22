@@ -1,71 +1,100 @@
 import type {
-	ProviderConfig,
-	ProviderModelConfig,
-} from "@earendil-works/pi-coding-agent";
-import type { OmlxModel } from "./catalog.ts";
-import { FREE_COST } from "./pricing.ts";
+	ApiKeyCredential,
+	AuthCheck,
+	AuthContext,
+	AuthResult,
+	Model,
+	Provider,
+} from "@earendil-works/pi-ai";
+import { openAICompletionsApi } from "@earendil-works/pi-ai/compat";
+import { PROVIDER_KEY } from "./auth-storage.ts";
+import { refreshOmlxCatalog } from "./catalog.ts";
+import {
+	OMLX_BASE_URL_ENV_VAR,
+	type OmlxCredentialSource,
+	resolveOmlx,
+} from "./config.ts";
+import { omlxDebug } from "./debug.ts";
+import { loginOmlx } from "./login.ts";
 import {
 	resolveFirstDeltaTimeoutMs,
 	streamOmlxOpenAICompletions,
 } from "./stream.ts";
-import { thinkingFormatFor } from "./thinking-format.ts";
 
-const BASE_COMPAT = {
-	supportsDeveloperRole: false,
-	supportsReasoningEffort: false,
-	supportsLongCacheRetention: true,
-	maxTokensField: "max_tokens",
-} as const;
+/**
+ * The one provider pi registers for `omlx`: a native API-key login, the model
+ * list its own refresh hook publishes, and both stream entry points. pi uses the
+ * object untouched unless `models.json` overlays it.
+ */
+export function createOmlxProvider(): Provider<"openai-completions"> {
+	// The concrete API is captured once: it is what both stream entry points
+	// reach, and it can never be this provider's own wrapper.
+	const openAICompletions = openAICompletionsApi();
+	let models: readonly Model<"openai-completions">[] = [];
+	// The last source the trace reported. Per instance, so a fresh load reports
+	// again and no reset seam exists for a test to reach for.
+	let tracedSource: OmlxCredentialSource | undefined;
 
-export function toProviderConfig(
-	apiRoot: string,
-	apiKeyEnvVar: string,
-	models: OmlxModel[],
-	options: { keyless?: boolean } = {},
-): ProviderConfig {
-	const config: ProviderConfig = {
-		baseUrl: apiRoot,
-		api: "openai-completions",
-		// Keyless server (skip_api_key_verification): no auth header. Pi rejects
-		// authHeader:true with no key, and resolveConfigValueOrThrow would throw
-		// on an unset $OMLX_API_KEY — so both apiKey and authHeader stay off.
-		authHeader: !options.keyless,
-		streamSimple: (model, context, streamOptions) =>
+	const resolve = async (input: {
+		ctx: AuthContext;
+		credential?: ApiKeyCredential;
+	}): Promise<AuthResult | undefined> => {
+		const resolution = await resolveOmlx(input.credential, (name) =>
+			input.ctx.env(name),
+		);
+		if (!resolution) return undefined;
+		if (resolution.source !== tracedSource) {
+			tracedSource = resolution.source;
+			omlxDebug("provider_registered", {
+				provider: PROVIDER_KEY,
+				models: models.length,
+				streamSimple: true,
+				source: resolution.source,
+			});
+		}
+		return {
+			auth: { apiKey: resolution.apiKey, baseUrl: resolution.baseUrl },
+			env: { [OMLX_BASE_URL_ENV_VAR]: resolution.baseUrl },
+			source: resolution.source,
+		};
+	};
+
+	const check = async (input: {
+		ctx: AuthContext;
+		credential?: ApiKeyCredential;
+	}): Promise<AuthCheck | undefined> => {
+		const resolution = await resolveOmlx(input.credential, (name) =>
+			input.ctx.env(name),
+		);
+		return resolution
+			? { type: "api_key", source: resolution.source }
+			: undefined;
+	};
+
+	return {
+		id: PROVIDER_KEY,
+		name: "OMLX",
+		auth: {
+			apiKey: {
+				name: "OMLX",
+				login: loginOmlx,
+				check,
+				resolve,
+			},
+		},
+		getModels: () => models,
+		refreshModels: async (context) =>
+			refreshOmlxCatalog(context, (next) => {
+				models = next;
+			}),
+		stream: (model, context, options) =>
+			openAICompletions.stream(model, context, options),
+		streamSimple: (model, context, options) =>
 			streamOmlxOpenAICompletions(
 				model,
 				context,
-				streamOptions,
+				options,
 				resolveFirstDeltaTimeoutMs(),
 			),
-		models: models.map(toProviderModel),
-	};
-	if (!options.keyless) config.apiKey = `$${apiKeyEnvVar}`;
-	return config;
-}
-
-function requirePositive(
-	value: number | undefined,
-	modelId: string,
-	field: string,
-): number {
-	if (typeof value === "number" && value > 0) return value;
-	throw new Error(
-		`OMLX model "${modelId}" did not report ${field}; cannot register it without a real value.`,
-	);
-}
-
-function toProviderModel(m: OmlxModel): ProviderModelConfig {
-	const reasoning = m.thinkingDefault === true;
-	return {
-		id: m.id,
-		name: m.displayName ?? m.id,
-		reasoning,
-		input: m.modelType === "vlm" ? ["text", "image"] : ["text"],
-		cost: { ...FREE_COST },
-		contextWindow: requirePositive(m.contextWindow, m.id, "max_context_window"),
-		maxTokens: requirePositive(m.maxTokens, m.id, "max_tokens"),
-		compat: reasoning
-			? { ...BASE_COMPAT, thinkingFormat: thinkingFormatFor(m.reasoningParser) }
-			: { ...BASE_COMPAT },
 	};
 }

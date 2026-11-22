@@ -11,11 +11,12 @@ import {
 // re-exported from compat, and call it directly rather than through the compat
 // `streamSimple` dispatcher: the lazy factory returns a closure over the
 // concrete implementation that loads the module on first call, so the call
-// costs no registry lookup. It is captured here at module load, BEFORE the
-// wrapper is registered, so it can never be the wrapper itself.
+// costs no registry lookup. It is captured here at module load, before the
+// provider object that calls it exists, so it can never be that object's own
+// `streamSimple`.
 //
 // Pi resolves the provider from `model.provider` before any stream call, so
-// only `omlx` models reach this wrapper and it needs no pass-through branch.
+// only `omlx` models reach this function and it needs no pass-through branch.
 // shortcut: relies on pi 1.5.2 dispatching streamSimple per provider
 // (model-runtime.js prepareRequest, provider-composer.js streamWith); peer
 // range is "*", re-check on a pi upgrade

@@ -50,7 +50,7 @@ Every run of the suite SHALL resolve pi's agent directory and the extension's `~
 
 ### Requirement: Fixtures Reach Pi's State Through The Agent Directory And Stay Under The Root
 
-The suite SHALL reach pi's stored credential and the extension's catalog cache by setting the agent directory pi resolves, and SHALL use no production export or branch that exists only for a test. Every temporary path a fixture names SHALL be under the isolation root, whether the test creates it or only refers to it.
+The suite SHALL reach pi's stored credential and pi's model store by setting the agent directory pi resolves, and SHALL use no production export or branch that exists only for a test. Every temporary path a fixture names SHALL be under the isolation root, whether the test creates it or only refers to it.
 
 #### Scenario: A credential fixture reaches the extension through a temporary agent directory
 

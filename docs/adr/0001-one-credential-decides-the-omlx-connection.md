@@ -1,6 +1,6 @@
 # 0001 One credential decides the OMLX connection
 
-**Status:** Accepted
+**Status:** Superseded by [0002](0002-the-credential-resolution-runs-in-pi-hooks.md)
 
 ## Context
 

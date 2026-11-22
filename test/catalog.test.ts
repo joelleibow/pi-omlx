@@ -1,11 +1,5 @@
 import { strict as assert } from "node:assert";
-import {
-	existsSync,
-	mkdirSync,
-	mkdtempSync,
-	readFileSync,
-	writeFileSync,
-} from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { inject, test } from "vitest";
 import {
@@ -13,10 +7,12 @@ import {
 	fetchModels,
 	parseModelsResponse,
 	parseModelsStatusResponse,
-	readCatalogCache,
 	resolveArchContextLimits,
-	writeCatalogCache,
+	toProviderModel,
 } from "../src/catalog.ts";
+
+// The URL the mapper writes onto every model it produces.
+const BASE_URL = "http://127.0.0.1:9400/v1";
 
 test("resolveArchContextLimits uses arch ceiling as prio-3 fallback", () => {
 	const [m] = resolveArchContextLimits([{ id: "x", archContextWindow: 72099 }]);
@@ -179,30 +175,6 @@ test("fetchModels prefers /models/status", async () => {
 			},
 		]);
 		assert.deepEqual(calls, ["http://example.test/v1/models/status"]);
-	} finally {
-		globalThis.fetch = originalFetch;
-	}
-});
-
-test("fetchModels omits the Authorization header for keyless servers", async () => {
-	const originalFetch = globalThis.fetch;
-	let sawAuthHeader: string | null = "unset";
-	globalThis.fetch = (async (url: string, init?: RequestInit) => {
-		if (url.endsWith("/models/status")) {
-			const headers = new Headers(init?.headers);
-			sawAuthHeader = headers.get("Authorization");
-			return new Response(
-				JSON.stringify({
-					models: [{ id: "x", max_context_window: 1000, max_tokens: 500 }],
-				}),
-				{ status: 200 },
-			);
-		}
-		throw new Error(`unexpected url ${url}`);
-	}) as typeof fetch;
-	try {
-		await fetchModels("http://example.test/v1", "");
-		assert.equal(sawAuthHeader, null);
 	} finally {
 		globalThis.fetch = originalFetch;
 	}
@@ -478,76 +450,78 @@ test("fetchModels times out", async () => {
 	}
 });
 
-function readApiRoot(path: string): string {
-	return (JSON.parse(readFileSync(path, "utf-8")) as { apiRoot: string })
-		.apiRoot;
-}
+test("toProviderModel marks only explicit thinking_default true as reasoning capable", () => {
+	const models = [
+		{
+			id: "qwen",
+			thinkingDefault: true,
+			reasoningParser: "qwen",
+			contextWindow: 32768,
+			maxTokens: 8192,
+		},
+		{
+			id: "gemma",
+			thinkingDefault: false,
+			contextWindow: 32768,
+			maxTokens: 8192,
+		},
+		{ id: "plain", contextWindow: 32768, maxTokens: 8192 },
+		{
+			id: "no-toggle",
+			thinkingDefault: null,
+			contextWindow: 32768,
+			maxTokens: 8192,
+		},
+	].map((model) => toProviderModel(model, BASE_URL));
 
-// catalog-discovery: a write after the agent directory changes lands under the
-// new directory. src/catalog.ts is loaded by test/isolation/worker-setup.ts
-// before any test runs, so the directory in force at load is the run's
-// <root>/agent and this test cannot choose it (michael-orientation trap (e)).
-// B is therefore set after the import, with no vi.resetModules().
-test("a cache write after the agent directory changes lands under the new directory", () => {
-	const apiRoot = "https://cache-path-test.invalid/v1";
-	const dirB = mkdtempSync(
-		join(inject("isolationRoot"), "pi-omlx-cache-write-"),
-	);
-	const savedAgentDir = process.env.PI_CODING_AGENT_DIR;
-	try {
-		process.env.PI_CODING_AGENT_DIR = dirB;
-		writeCatalogCache(apiRoot, [
-			{ id: "b-model", contextWindow: 8192, maxTokens: 1024 },
-		]);
-
-		assert.equal(readApiRoot(join(dirB, "cache", "omlx-models.json")), apiRoot);
-
-		// The /login test writes this file in a full run, so its content is the
-		// check, never its presence (council A4).
-		const loadTime = join(
-			inject("isolationRoot"),
-			"agent",
-			"cache",
-			"omlx-models.json",
-		);
-		if (existsSync(loadTime)) assert.notEqual(readApiRoot(loadTime), apiRoot);
-	} finally {
-		if (savedAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-		else process.env.PI_CODING_AGENT_DIR = savedAgentDir;
-	}
+	assert.equal(models[0]?.reasoning, true);
+	assert.equal(models[1]?.reasoning, false);
+	assert.equal(models[2]?.reasoning, false);
+	assert.equal(models[3]?.reasoning, false);
+	assert.deepEqual(models[0]?.compat, {
+		supportsDeveloperRole: false,
+		supportsReasoningEffort: false,
+		supportsLongCacheRetention: true,
+		maxTokensField: "max_tokens",
+		thinkingFormat: "qwen-chat-template",
+	});
+	assert.deepEqual(models[1]?.compat, {
+		supportsDeveloperRole: false,
+		supportsReasoningEffort: false,
+		supportsLongCacheRetention: true,
+		maxTokensField: "max_tokens",
+	});
+	assert.deepEqual(models[2]?.compat, {
+		supportsDeveloperRole: false,
+		supportsReasoningEffort: false,
+		supportsLongCacheRetention: true,
+		maxTokensField: "max_tokens",
+	});
+	assert.deepEqual(models[3]?.compat, {
+		supportsDeveloperRole: false,
+		supportsReasoningEffort: false,
+		supportsLongCacheRetention: true,
+		maxTokensField: "max_tokens",
+	});
 });
 
-// catalog-discovery: a read follows the agent directory in force when it runs.
-// B holds a cache and C holds none, so a read that reports B's models under B
-// and nothing under C can only be following the directory in force. The test
-// seeds nothing under <root>/agent, which the /login test writes (council S2).
-test("a cache read follows the agent directory in force when it runs", () => {
-	const apiRoot = "https://cache-read-path-test.invalid/v1";
-	const dirB = mkdtempSync(
-		join(inject("isolationRoot"), "pi-omlx-cache-read-b-"),
-	);
-	const dirC = mkdtempSync(
-		join(inject("isolationRoot"), "pi-omlx-cache-read-c-"),
-	);
-	mkdirSync(join(dirB, "cache"), { recursive: true });
-	writeFileSync(
-		join(dirB, "cache", "omlx-models.json"),
-		JSON.stringify({
-			apiRoot,
-			models: [{ id: "b-model", contextWindow: 8192, maxTokens: 1024 }],
-		}),
-	);
-	const savedAgentDir = process.env.PI_CODING_AGENT_DIR;
-	try {
-		process.env.PI_CODING_AGENT_DIR = dirB;
-		assert.deepEqual(
-			readCatalogCache(apiRoot)?.map((model) => model.id),
-			["b-model"],
-		);
-		process.env.PI_CODING_AGENT_DIR = dirC;
-		assert.equal(readCatalogCache(apiRoot), undefined);
-	} finally {
-		if (savedAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-		else process.env.PI_CODING_AGENT_DIR = savedAgentDir;
-	}
+test("toProviderModel maps displayName to Pi name and keeps OMLX-only settings out of provider model", () => {
+	const models = [
+		{
+			id: "raw-model-id",
+			displayName: "Human Model Name",
+			contextWindow: 32768,
+			maxTokens: 8192,
+			archContextWindow: 65536,
+			reasoningParser: "qwen",
+			thinkingDefault: true,
+		},
+	].map((entry) => toProviderModel(entry, BASE_URL));
+
+	const model = models[0] as unknown as Record<string, unknown>;
+	assert.equal(model.name, "Human Model Name");
+	assert.equal(model.id, "raw-model-id");
+	assert.equal("archContextWindow" in model, false);
+	assert.equal("reasoningParser" in model, false);
+	assert.equal("thinkingDefault" in model, false);
 });

@@ -3,15 +3,12 @@ import { readStoredCredential } from "@earendil-works/pi-coding-agent";
 export const PROVIDER_KEY = "omlx";
 
 /**
- * The stored `omlx` credential exactly as auth.json presents it: pi's record
- * plus the `baseUrl` this extension's login wrote. Nothing here is filtered or
- * validated; the resolver judges what a present record means.
+ * The one thing the extension reads from the stored `omlx` credential: its
+ * type, which is what the startup remedy keys on. Pi judges what a present
+ * credential means for requests; nothing here is filtered or validated.
  */
 export interface OmlxCredentialRecord {
 	type: string;
-	baseUrl?: string;
-	key?: string;
-	access?: string;
 }
 
 export function readOmlxCredential(): OmlxCredentialRecord | undefined {

@@ -12,7 +12,7 @@ The choice is what name a model carries across the extension's boundary into Pi.
 
 ## Decision
 
-A model's published id is the name the server gives it. On `/models/status` that is the alias when the alias is set and no other entry claims it, ignoring case, as a model id or an alias; otherwise the folder name. On the `/models` fallback it is the id that endpoint returned. A collision declines to the folder name rather than dropping the model, because OMLX resolves model ids before aliases.
+A model's published id is the name the server gives it. On `/models/status` that is the alias when the alias is set and no other entry claims it, ignoring case, as a model id or an alias; otherwise the folder name. On the `/models` fallback it is the id that endpoint returned. A collision declines to the folder name rather than dropping the model, because OMLX would not route that alias back to this model: it resolves model ids before aliases, and sends a shared alias to whichever settings entry it reads first.
 
 The folder name stays Pi's display label wherever the server sets no display name and the catalog holds the folder name, so the model stays findable in the picker by the name its folder carries. The status endpoint reports the folder name; the fallback endpoint reports only the alias, so there the label is the alias unless an overlay entry supplies the folder name. The metadata overlay keeps matching on the folder name, which is the key OMLX's own settings file uses; on the fallback path it finds an aliased model through the id the endpoint reported, or through an entry whose `model_alias` is that id.
 
@@ -20,7 +20,7 @@ Nothing is migrated. Pi's settings, session records, model store and `models.jso
 
 ## Consequences
 
-`/model <alias>` and a saved default of the alias both resolve, on either endpoint, and a model keeps one id across a refresh that switches endpoints.
+`/model <alias>` and a saved default of the alias both resolve, on either endpoint, and a model whose alias the status path accepts keeps one id across a refresh that switches endpoints.
 
 The cost lands on users who already saved the folder name. A saved default, a session record, a `models.json` override or a glob `enabledModels` entry written under the folder name stops resolving after the first refresh that publishes the alias. A saved default misses on every start until the alias is saved as the default, with `Ctrl+S` in `/model` or an edit to `settings.json`; `/model <alias>` and pressing Enter switch only the current session. No warning is added, because the extension's at-most-one startup warning is spent on the case where Pi holds no catalog at all.
 

@@ -311,5 +311,5 @@ Every scenario in `specs/catalog-discovery/spec.md`, with the task and test that
 
 ## Not Tasks
 
-- Markdown documentation is Bambadjan's docs pass after the implementation gate, listed once in `design.md`'s Migration Plan ("Bambadjan, docs pass"); `ARCHITECTURE.md` and `AGENTS.md` stay untouched.
+- Markdown documentation is Bambadjan's docs pass after the implementation gate, listed once in `design.md`'s Migration Plan ("Bambadjan, docs pass").
 - Rollback and the first-refresh re-key live in `design.md`'s Migration Plan (`council.md` R14). No task migrates Pi's `settings.json`, session records, `models.json` or `models-store.json` (D7), and no task writes the isolation root's `home/.omlx/model_settings.json` (`council.md` R13).

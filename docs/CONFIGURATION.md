@@ -26,7 +26,7 @@ A failed refresh shows up in `/model` and in the message after a login. A refres
 
 The extension's own cache, `~/.pi/agent/cache/omlx-models.json`, is no longer read or written. Nothing deletes it; remove it yourself if you want the space back.
 
-A saved default written as a model's folder name stops resolving once the server publishes an alias for that model: Pi's `defaultModel` matches the id, the id is now the alias, and each start lands on another provider's model without a warning. Save the alias as the default once — highlight it in `/model` and press `Ctrl+S`, or edit `defaultModel` in Pi's `settings.json`. Typing `/model <alias>` or pressing Enter switches only the current session. A `models.json` `modelOverrides` key or a glob `enabledModels` entry written as the folder name misses the same way.
+A saved default written as a model's folder name stops resolving once the server publishes an alias for that model: Pi's `defaultModel` matches the id, the id is now the alias, and each start lands, without a warning, on the model Pi falls back to: another provider's default, or the first available model, which can be a different OMLX model. Save the alias as the default once — highlight it in `/model` and press `Ctrl+S`, or edit `defaultModel` in Pi's `settings.json`. Typing `/model <alias>` or pressing Enter switches only the current session. A `models.json` `modelOverrides` key or a glob `enabledModels` entry written as the folder name misses the same way.
 
 The extension shows at most one warning at a session's start, and never two:
 

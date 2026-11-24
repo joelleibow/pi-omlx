@@ -286,19 +286,42 @@ export function registrableModels(models: readonly OmlxModel[]): OmlxModel[] {
 
 export const DEFAULT_FETCH_TIMEOUT_MS = 15_000;
 
+interface FetchContext {
+	signal?: AbortSignal;
+	timeoutMs?: number;
+	modelSettingsPath?: string;
+	onDebug?: (event: CatalogDebugEvent) => void;
+}
+
+/** The endpoint that answered a fetch, and the entries it returned in order. */
+interface ParsedCatalog {
+	endpoint: CatalogEndpoint;
+	models: OmlxModel[];
+}
+
+type CatalogEndpoint = "status" | "models";
+
 export async function fetchModels(
 	apiRoot: string,
 	apiKey: string,
-	opts: {
-		signal?: AbortSignal;
-		timeoutMs?: number;
-		modelSettingsPath?: string;
-		onDebug?: (event: CatalogDebugEvent) => void;
-	} = {},
+	opts: FetchContext = {},
 ): Promise<OmlxModel[]> {
 	const timeoutMs = opts.timeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS;
-	let models: OmlxModel[];
+	const parsed = await fetchParsedCatalog(apiRoot, apiKey, opts, timeoutMs);
+	return applyPostParsePipeline(parsed, apiRoot, apiKey, opts, timeoutMs);
+}
 
+/**
+ * The endpoint that answered, parsed and counted. The `/models/status` request
+ * and parse stay in the `try` and the `/models` pair runs in the `catch`, so a
+ * server without the status endpoint still publishes its catalog.
+ */
+async function fetchParsedCatalog(
+	apiRoot: string,
+	apiKey: string,
+	opts: FetchContext,
+	timeoutMs: number,
+): Promise<ParsedCatalog> {
 	try {
 		const json = await getJson(
 			`${apiRoot}/models/status`,
@@ -306,27 +329,12 @@ export async function fetchModels(
 			opts.signal,
 			timeoutMs,
 		);
-		models = parseModelsStatusResponse(json);
+		const models = parseModelsStatusResponse(json);
 		opts.onDebug?.({
 			kind: "catalog_status_loaded",
 			details: { apiRoot, count: models.length },
 		});
-		models = applyLocalModelSettings(
-			models,
-			apiRoot,
-			opts.modelSettingsPath,
-			opts.onDebug,
-		);
-		return resolveArchContextLimits(
-			await applyApiGlobalDefaultsIfNeeded(
-				models,
-				apiRoot,
-				apiKey,
-				opts.signal,
-				timeoutMs,
-				opts.onDebug,
-			),
-		);
+		return { endpoint: "status", models };
 	} catch (err) {
 		if (err instanceof Error && err.name === "AbortError") throw err;
 		opts.onDebug?.({
@@ -345,13 +353,28 @@ export async function fetchModels(
 		opts.signal,
 		timeoutMs,
 	);
-	models = parseModelsResponse(json);
+	const models = parseModelsResponse(json);
 	opts.onDebug?.({
 		kind: "catalog_models_loaded",
 		details: { apiRoot, count: models.length },
 	});
-	models = applyLocalModelSettings(
-		models,
+	return { endpoint: "models", models };
+}
+
+/**
+ * The steps every fetch runs once its endpoint has answered: the local overlay,
+ * then the server's global defaults, then the architectural clamp. The overlay
+ * and defaults steps keep rethrowing an abort.
+ */
+async function applyPostParsePipeline(
+	parsed: ParsedCatalog,
+	apiRoot: string,
+	apiKey: string,
+	opts: FetchContext,
+	timeoutMs: number,
+): Promise<OmlxModel[]> {
+	const models = applyLocalModelSettings(
+		parsed.models,
 		apiRoot,
 		opts.modelSettingsPath,
 		opts.onDebug,

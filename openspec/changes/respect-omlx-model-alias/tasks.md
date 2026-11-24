@@ -21,7 +21,7 @@ Every new `fetchModels` test that writes no overlay passes an explicit `modelSet
 
 ## 1. The shared post-parse pipeline
 
-- [ ] 1.1 Collapse the duplicated overlay → global-defaults → clamp blocks into one pipeline outside the `try`.
+- [x] 1.1 Collapse the duplicated overlay → global-defaults → clamp blocks into one pipeline outside the `try`.
   - **Code:** the `/models/status` fetch and parse stay in the `try` and the `/models` fetch and parse stay in the `catch`; one post-parse pipeline runs outside the `try` in the order overlay, global defaults, clamp, replacing the two repeated blocks (`src/catalog.ts:302-368`). 2.2 then puts the identity step at the head of that pipeline. The overlay and defaults steps keep rethrowing an abort.
   - **Failing test first:** none — a behavior-preserving move.
   - **Holds:** `fetchModels applies local OMLX model settings for localhost metadata refinement`, `fetchModels falls back to /models when /models/status fails` (`test/catalog.test.ts:392-429`), `fetchModels times out`, and in `test/refresh.test.ts` the offline-phase, refusal and abort cases.

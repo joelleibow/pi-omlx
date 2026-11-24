@@ -257,7 +257,7 @@ export function toProviderModel(
 	const reasoning = m.thinkingDefault === true;
 	return {
 		id: m.id,
-		name: m.displayName ?? m.id,
+		name: m.displayName ?? m.directoryName ?? m.id,
 		api: "openai-completions",
 		provider: PROVIDER_KEY,
 		baseUrl,

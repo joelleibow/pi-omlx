@@ -170,7 +170,7 @@ Every new `fetchModels` test that writes no overlay passes an explicit `modelSet
 
 ## 5. The display label and the applied-settings trace
 
-- [ ] 5.1 Map Pi's `name` to `displayName ?? directoryName ?? id`.
+- [x] 5.1 Map Pi's `name` to `displayName ?? directoryName ?? id`.
   - **Code:** `toProviderModel`'s `name` is the one home of R5's label rule; `id: m.id` is unchanged.
   - **Failing tests first:**
     - `toProviderModel labels an aliased model by its folder name when no display name is set` — through `fetchModels`, then `toProviderModel`, with status `[{ id: "Qwen3-dir", model_alias: "qwen", L }]` and the preamble's explicit absent `modelSettingsPath`; it asserts `id` `"qwen"` and `name` `"Qwen3-dir"`. It is red at HEAD on `id`, which is `Qwen3-dir` because HEAD never reads the alias, and red on `name` from 2.3 until 5.1 lands.
@@ -184,7 +184,7 @@ Every new `fetchModels` test that writes no overlay passes an explicit `modelSet
   - **Red/green:** `dr-resolve-s3-r1.md C5` (measured the label `Qwen3-dir` on an alias-matched fallback model); `dr-resolve-s5-r3.md` RDY3-1 (both fixtures and both mutations); `redgreen-derek.md` A37 and A38 (the alias label red at HEAD, and the display-name fixtures as pins, with both mutations measured).
   - **Verified by:** `npx vitest run test/catalog.test.ts`.
 
-- [ ] 5.2 Label a fallback model by the overlay key its alias matched, and by the published id when nothing matched.
+- [x] 5.2 Label a fallback model by the overlay key its alias matched, and by the published id when nothing matched.
   - **Code:** none; 4.3 sets `directoryName` and 5.1 maps `name`.
   - **Failing test first:** `toProviderModel labels a fallback alias match by the overlay key, and by the published id with no match` — status answers 404 and `/models` answers `qwen`, under the preamble's global-defaults stub. The first half writes `{ "Qwen3-dir": { model_alias: "qwen", max_context_window: 131072, max_tokens: 8192 } }` and asserts `name` `"Qwen3-dir"`. The second half asserts `name` `"qwen"` for the preamble's explicit absent path and for `{ "B-dir": { model_alias: "qwen" }, "A-dir": { model_alias: "qwen" } }`.
   - **Boundary cases:** an alias match present; no overlay entry; two overlay entries sharing the alias, which labels by the published id exactly as no match does. Both second-half fixtures — the shared-alias pair beside the no-overlay-entry one — expect `name` `qwen`.
@@ -192,7 +192,7 @@ Every new `fetchModels` test that writes no overlay passes an explicit `modelSet
   - **Red/green:** `dr-resolve-s3-r1.md C5` (measured label `Qwen3-dir`) and `dr-resolve-s3-r1.md C6` (measured a case-only fallback labelled `Qwen-A`); `dr-resolve-s5.md` RDY-4 measured both mutations; `redgreen-derek.md` A39 (the first half red at HEAD and green on the build; the second half green at HEAD as a pin; both mutations measured).
   - **Verified by:** `npx vitest run test/catalog.test.ts`.
 
-- [ ] 5.3 Carry `directoryName` beside `id` in `catalog_local_model_settings_applied`'s `before` and `after`.
+- [x] 5.3 Carry `directoryName` beside `id` in `catalog_local_model_settings_applied`'s `before` and `after`.
   - **Code:** none; 2.6 and 4.3 set `directoryName` before the comparison, and `modelId` stays the published id.
   - **Failing test first:** `the applied-settings event carries the directory name beside the published id` — on the fallback, status 404, `/models` answering `qwen` and the 5.2 first-half overlay, the applied event's `modelId` is `"qwen"`, `before.id` is `"qwen"` and `before.directoryName` is `"Qwen3-dir"`. On the status path, status `[{ id: "Qwen3-dir", model_alias: "qwen", L }]` with overlay `{ "Qwen3-dir": { max_tokens: 50 } }` gives the same three values.
   - **Boundary cases:** an alias-matched fallback model; a status model.

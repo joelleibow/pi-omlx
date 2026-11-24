@@ -1526,3 +1526,143 @@ test("fetchModels ignores an overlay file that parses to null", async () => {
 		],
 	);
 });
+
+// The display label: the server's or the overlay's display name, else the
+// directory name, else the published id.
+
+test("toProviderModel labels an aliased model by its folder name when no display name is set", async () => {
+	const result = await fetchCatalog({
+		status: { models: [{ id: "Qwen3-dir", model_alias: "qwen", ...L }] },
+	});
+	const [model] = result.models;
+	assert.ok(model);
+
+	const providerModel = toProviderModel(model, BASE_URL);
+	assert.equal(providerModel.id, "qwen");
+	assert.equal(providerModel.name, "Qwen3-dir");
+});
+
+test("toProviderModel prefers a display name over the folder name", async () => {
+	const server = await fetchCatalog({
+		status: {
+			models: [
+				{
+					id: "Qwen3-dir",
+					model_alias: "qwen",
+					display_name: "Server Name",
+					...L,
+				},
+			],
+		},
+	});
+	const [serverModel] = server.models;
+	assert.ok(serverModel);
+	assert.equal(toProviderModel(serverModel, BASE_URL).name, "Server Name");
+
+	const overlay = await fetchCatalog(
+		{
+			status: {
+				models: [
+					{
+						id: "Qwen3-dir",
+						model_alias: "qwen",
+						display_name: "Server Name",
+						...L,
+					},
+				],
+			},
+		},
+		{
+			modelSettingsPath: writeOverlay({
+				models: { "Qwen3-dir": { display_name: "Overlay Name" } },
+			}),
+		},
+	);
+	const [overlayModel] = overlay.models;
+	assert.ok(overlayModel);
+	assert.equal(toProviderModel(overlayModel, BASE_URL).name, "Overlay Name");
+});
+
+test("toProviderModel labels a fallback alias match by the overlay key, and by the published id with no match", async () => {
+	const matched = await fetchCatalog(
+		{ models: { object: "list", data: [{ id: "qwen" }] } },
+		{
+			modelSettingsPath: writeOverlay({
+				models: {
+					"Qwen3-dir": {
+						model_alias: "qwen",
+						max_context_window: 131072,
+						max_tokens: 8192,
+					},
+				},
+			}),
+		},
+	);
+	const [matchedModel] = matched.models;
+	assert.ok(matchedModel);
+	assert.equal(toProviderModel(matchedModel, BASE_URL).name, "Qwen3-dir");
+
+	const unmatched = await fetchCatalog({
+		models: { object: "list", data: [{ id: "qwen" }] },
+	});
+	const [unmatchedModel] = unmatched.models;
+	assert.ok(unmatchedModel);
+	assert.equal(toProviderModel(unmatchedModel, BASE_URL).name, "qwen");
+
+	const shared = await fetchCatalog(
+		{ models: { object: "list", data: [{ id: "qwen" }] } },
+		{
+			modelSettingsPath: writeOverlay({
+				models: {
+					"B-dir": { model_alias: "qwen" },
+					"A-dir": { model_alias: "qwen" },
+				},
+			}),
+		},
+	);
+	const [sharedModel] = shared.models;
+	assert.ok(sharedModel);
+	assert.equal(toProviderModel(sharedModel, BASE_URL).name, "qwen");
+});
+
+test("the applied-settings event carries the directory name beside the published id", async () => {
+	const fallback = await fetchCatalog(
+		{ models: { object: "list", data: [{ id: "qwen" }] } },
+		{
+			modelSettingsPath: writeOverlay({
+				models: {
+					"Qwen3-dir": {
+						model_alias: "qwen",
+						max_context_window: 131072,
+						max_tokens: 8192,
+					},
+				},
+			}),
+		},
+	);
+	const fallbackEvent = detailsOf(
+		fallback.events,
+		"catalog_local_model_settings_applied",
+	);
+	assert.equal(fallbackEvent.modelId, "qwen");
+	const fallbackBefore = fallbackEvent.before as Record<string, unknown>;
+	assert.equal(fallbackBefore.id, "qwen");
+	assert.equal(fallbackBefore.directoryName, "Qwen3-dir");
+
+	const status = await fetchCatalog(
+		{ status: { models: [{ id: "Qwen3-dir", model_alias: "qwen", ...L }] } },
+		{
+			modelSettingsPath: writeOverlay({
+				models: { "Qwen3-dir": { max_tokens: 50 } },
+			}),
+		},
+	);
+	const statusEvent = detailsOf(
+		status.events,
+		"catalog_local_model_settings_applied",
+	);
+	assert.equal(statusEvent.modelId, "qwen");
+	const statusBefore = statusEvent.before as Record<string, unknown>;
+	assert.equal(statusBefore.id, "qwen");
+	assert.equal(statusBefore.directoryName, "Qwen3-dir");
+});

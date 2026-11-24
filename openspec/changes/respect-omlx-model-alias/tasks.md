@@ -202,7 +202,7 @@ Every new `fetchModels` test that writes no overlay passes an explicit `modelSet
 
 ## 6. Publication, persistence and the outliving session
 
-- [ ] 6.1 Prove the alias is published and persisted as the model id through `refreshOmlxCatalog`.
+- [x] 6.1 Prove the alias is published and persisted as the model id through `refreshOmlxCatalog`.
   - **Proof test (green once 2.3 lands):** `the network phase publishes and persists an alias as the model id` in `test/refresh.test.ts` — the end-to-end proof through `refreshOmlxCatalog` on the existing `refreshHarness`, with the existing `api_key` credential and `allowNetwork: true`, and `respond` returning `catalogResponse([{ id: "Qwen3-dir", model_alias: "qwen", max_context_window: 65536, max_tokens: 8192 }, { id: "plain", max_context_window: 65536, max_tokens: 8192 }])`. After `harness.refresh()`, both `state.persisted?.models.map((model) => model.id)` and `state.committed?.map((model) => model.id)` deep-equal `["qwen", "plain"]`.
   - **Shown failing by:** skip the identity step's `id = modelAlias` replacement; this test fails. Map `toProviderModel`'s `id` to `directoryName ?? id`; this test fails.
   - **Constraint (design R13):** the test writes no `<isolationRoot>/home/.omlx/model_settings.json` and assigns no `process.env` key, because the isolation root is shared by every worker.
@@ -210,7 +210,7 @@ Every new `fetchModels` test that writes no overlay passes an explicit `modelSet
   - **Red/green:** `dr-resolve-s3-r1.md C1` (measured exactly three catalog tests changing under this pipeline, so the refresh suite carries this proof newly); `dr-resolve-s5-r3.md` RDY3-6 (red at HEAD, green under the design, and red again under the skipped replacement); `redgreen-derek.md` A41 (red at HEAD and green on the build, with both mutations measured).
   - **Verified by:** `npx vitest run test/refresh.test.ts`.
 
-- [ ] 6.2 Keep the offline phase publishing exactly what Pi stored.
+- [x] 6.2 Keep the offline phase publishing exactly what Pi stored.
   - **Code:** none; the offline phase fetches nothing and re-keys nothing.
   - **Failing test first:** none — `the offline phase publishes the stored models and fetches nothing` (`test/refresh.test.ts:134-152`) holds unchanged; the offline phase restores `context.stored` without reading any id (`src/catalog.ts:136-141`), so a stored alias id needs no case of its own.
   - **Boundary cases:** none.

@@ -34,6 +34,14 @@ function absentSettingsPath(): string {
 	return join(inject("isolationRoot"), "pi-omlx-absent-model-settings.json");
 }
 
+// Writes an overlay to a directory of its own and returns its path.
+function writeOverlay(overlay: unknown): string {
+	const dir = mkdtempSync(join(inject("isolationRoot"), "pi-omlx-"));
+	const path = join(dir, "model_settings.json");
+	writeFileSync(path, JSON.stringify(overlay));
+	return path;
+}
+
 // Runs one fetch against a stubbed server answering the three endpoints a fetch
 // can reach, and records every URL it asked for. A missing endpoint body is a
 // 404, which is how the fixtures reach the `/models` fallback.
@@ -454,6 +462,7 @@ test("fetchModels emits catalog debug events for local settings refinement", asy
 			"catalog_model_identity",
 			"catalog_local_settings_considered",
 			"catalog_local_model_settings_applied",
+			"catalog_overlay_matches",
 		]);
 	} finally {
 		globalThis.fetch = originalFetch;
@@ -1084,5 +1093,436 @@ test("fetchModels publishes one id for a model both endpoints list", async () =>
 	assert.deepEqual(
 		fallback.models.map((model) => model.id),
 		["qwen"],
+	);
+});
+
+// The overlay, matched through the directory name on both paths.
+
+test("applyLocalModelSettings matches a status model by its directory name, not its published id", () => {
+	const settingsPath = writeOverlay({
+		models: {
+			"Qwen3-dir": { max_context_window: 1024, max_tokens: 256 },
+			qwen: { max_context_window: 4096, max_tokens: 512 },
+		},
+	});
+
+	const models = applyLocalModelSettings(
+		[{ id: "qwen", directoryName: "Qwen3-dir" }],
+		"http://example.com/v1",
+		settingsPath,
+	);
+
+	assert.equal(models[0]?.contextWindow, 1024);
+	assert.equal(models[0]?.maxTokens, 256);
+});
+
+test("applyLocalModelSettings gives a status model whose directory key is missing no fields", () => {
+	const settingsPath = writeOverlay({
+		models: {
+			qwen: { max_context_window: 4096, max_tokens: 512 },
+			"Qwen3-dir": {
+				model_alias: "qwen",
+				max_context_window: 2048,
+				max_tokens: 128,
+			},
+		},
+	});
+
+	const models = applyLocalModelSettings(
+		[{ id: "qwen", directoryName: "missing-dir" }],
+		"http://example.com/v1",
+		settingsPath,
+	);
+
+	assert.deepEqual(models, [{ id: "qwen", directoryName: "missing-dir" }]);
+});
+
+test("fetchModels emits catalog_overlay_matches only when an overlay models object was read", async () => {
+	const miss = await fetchCatalog(
+		{ status: { models: [{ id: "Qwen3-dir", model_alias: "qwen", ...L }] } },
+		{
+			modelSettingsPath: writeOverlay({
+				models: { "other-dir": { max_tokens: 1 } },
+			}),
+		},
+	);
+	assert.deepEqual(detailsOf(miss.events, "catalog_overlay_matches"), {
+		entries: [
+			{
+				publishedId: "qwen",
+				outcome: "none",
+				matchedKey: null,
+				competingKeys: [],
+			},
+		],
+	});
+	assert.equal(identityEntries(miss.events)[0]?.directoryName, "Qwen3-dir");
+
+	const exact = await fetchCatalog(
+		{ models: { object: "list", data: [{ id: "y" }] } },
+		{
+			modelSettingsPath: writeOverlay({
+				models: { y: { max_context_window: 2048, max_tokens: 128 } },
+			}),
+		},
+	);
+	assert.deepEqual(detailsOf(exact.events, "catalog_overlay_matches"), {
+		entries: [
+			{
+				publishedId: "y",
+				outcome: "directory_key",
+				matchedKey: "y",
+				competingKeys: [],
+			},
+		],
+	});
+
+	const absent = await fetchCatalog({
+		models: { object: "list", data: [{ id: "y" }] },
+	});
+	assert.equal(
+		absent.events.some((event) => event.kind === "catalog_overlay_matches"),
+		false,
+	);
+
+	const noModels = await fetchCatalog(
+		{ models: { object: "list", data: [{ id: "y" }] } },
+		{ modelSettingsPath: writeOverlay({ version: 1 }) },
+	);
+	assert.equal(
+		noModels.events.some((event) => event.kind === "catalog_overlay_matches"),
+		false,
+	);
+	assert.equal(
+		detailsOf(noModels.events, "catalog_local_settings_invalid").reason,
+		"models object missing",
+	);
+});
+
+test("fetchModels recovers an aliased fallback model's overlay limits through one alias match", async () => {
+	const recovered = await fetchCatalog(
+		{ models: { object: "list", data: [{ id: "qwen" }] } },
+		{
+			modelSettingsPath: writeOverlay({
+				models: {
+					"Qwen3-dir": {
+						model_alias: "qwen",
+						max_context_window: 131072,
+						max_tokens: 8192,
+					},
+				},
+			}),
+		},
+	);
+	assert.equal(recovered.models[0]?.contextWindow, 131072);
+	assert.equal(recovered.models[0]?.maxTokens, 8192);
+	assert.equal(recovered.models[0]?.id, "qwen");
+
+	const exact = await fetchCatalog(
+		{ models: { object: "list", data: [{ id: "qwen" }] } },
+		{
+			modelSettingsPath: writeOverlay({
+				models: {
+					qwen: { max_context_window: 4096, max_tokens: 512 },
+					"Qwen3-dir": {
+						model_alias: "qwen",
+						max_context_window: 131072,
+						max_tokens: 8192,
+					},
+				},
+			}),
+		},
+	);
+	assert.deepEqual(exact.models, [
+		{ id: "qwen", directoryName: "qwen", contextWindow: 4096, maxTokens: 512 },
+	]);
+	assert.deepEqual(detailsOf(exact.events, "catalog_overlay_matches"), {
+		entries: [
+			{
+				publishedId: "qwen",
+				outcome: "directory_key",
+				matchedKey: "qwen",
+				competingKeys: [],
+			},
+		],
+	});
+});
+
+test("fetchModels falls through a non-object exact overlay key to an alias match", async () => {
+	for (const value of [null, [], "x", 5]) {
+		const result = await fetchCatalog(
+			{ models: { object: "list", data: [{ id: "qwen" }] } },
+			{
+				modelSettingsPath: writeOverlay({
+					models: {
+						qwen: value,
+						"Qwen3-dir": {
+							model_alias: "qwen",
+							max_context_window: 131072,
+							max_tokens: 8192,
+						},
+					},
+				}),
+			},
+		);
+		const label = `exact key ${JSON.stringify(value)}`;
+		assert.equal(result.models[0]?.contextWindow, 131072, label);
+		assert.equal(result.models[0]?.maxTokens, 8192, label);
+		if (value === null) {
+			assert.deepEqual(detailsOf(result.events, "catalog_overlay_matches"), {
+				entries: [
+					{
+						publishedId: "qwen",
+						outcome: "alias_key",
+						matchedKey: "Qwen3-dir",
+						competingKeys: [],
+					},
+				],
+			});
+		}
+	}
+});
+
+test("fetchModels skips a null overlay entry during the alias scan", async () => {
+	const result = await fetchCatalog(
+		{ models: { object: "list", data: [{ id: "qwen" }] } },
+		{
+			modelSettingsPath: writeOverlay({
+				models: {
+					other: null,
+					"Qwen3-dir": {
+						model_alias: "qwen",
+						max_context_window: 131072,
+						max_tokens: 8192,
+					},
+				},
+			}),
+		},
+	);
+
+	assert.equal(result.models[0]?.contextWindow, 131072);
+	assert.deepEqual(detailsOf(result.events, "catalog_overlay_matches"), {
+		entries: [
+			{
+				publishedId: "qwen",
+				outcome: "alias_key",
+				matchedKey: "Qwen3-dir",
+				competingKeys: [],
+			},
+		],
+	});
+});
+
+test("fetchModels applies a stale overlay entry reached through another model's alias and names its key", async () => {
+	const result = await fetchCatalog(
+		{ models: { object: "list", data: [{ id: "qwen" }] } },
+		{
+			modelSettingsPath: writeOverlay({
+				models: {
+					"A-dir": {
+						model_alias: "qwen",
+						max_context_window: 4096,
+						max_tokens: 512,
+					},
+				},
+			}),
+		},
+	);
+
+	assert.equal(result.models[0]?.id, "qwen");
+	assert.equal(result.models[0]?.contextWindow, 4096);
+	assert.equal(result.models[0]?.maxTokens, 512);
+	assert.deepEqual(detailsOf(result.events, "catalog_overlay_matches"), {
+		entries: [
+			{
+				publishedId: "qwen",
+				outcome: "alias_key",
+				matchedKey: "A-dir",
+				competingKeys: [],
+			},
+		],
+	});
+});
+
+test("fetchModels never takes the published id from the overlay's model_alias", async () => {
+	const settingsPath = writeOverlay({
+		models: {
+			dir: { model_alias: "nick", max_context_window: 2048, max_tokens: 128 },
+		},
+	});
+	const status = await fetchCatalog(
+		{ status: { models: [{ id: "dir", ...L }] } },
+		{ modelSettingsPath: settingsPath },
+	);
+	const fallback = await fetchCatalog(
+		{ models: { object: "list", data: [{ id: "dir" }] } },
+		{ modelSettingsPath: settingsPath },
+	);
+
+	assert.equal(status.models[0]?.id, "dir");
+	assert.equal(status.models[0]?.contextWindow, 2048);
+	assert.equal(fallback.models[0]?.id, "dir");
+	assert.equal(fallback.models[0]?.contextWindow, 2048);
+});
+
+test("fetchModels applies no overlay fields when two entries share the matching alias", async () => {
+	const two = await fetchCatalog(
+		{ models: { object: "list", data: [{ id: "qwen" }] } },
+		{
+			modelSettingsPath: writeOverlay({
+				models: {
+					"B-dir": {
+						model_alias: "qwen",
+						max_context_window: 4096,
+						max_tokens: 512,
+					},
+					"A-dir": {
+						model_alias: "qwen",
+						max_context_window: 2048,
+						max_tokens: 128,
+					},
+				},
+			}),
+		},
+	);
+	assert.equal(two.models[0]?.contextWindow, 32768);
+	assert.equal(two.models[0]?.maxTokens, 4096);
+	assert.deepEqual(detailsOf(two.events, "catalog_overlay_matches"), {
+		entries: [
+			{
+				publishedId: "qwen",
+				outcome: "ambiguous",
+				matchedKey: null,
+				competingKeys: ["B-dir", "A-dir"],
+			},
+		],
+	});
+
+	const three = await fetchCatalog(
+		{ models: { object: "list", data: [{ id: "qwen" }] } },
+		{
+			modelSettingsPath: writeOverlay({
+				models: {
+					"C-dir": {
+						model_alias: "qwen",
+						max_context_window: 8192,
+						max_tokens: 1024,
+					},
+					"B-dir": {
+						model_alias: "qwen",
+						max_context_window: 4096,
+						max_tokens: 512,
+					},
+					"A-dir": {
+						model_alias: "qwen",
+						max_context_window: 2048,
+						max_tokens: 128,
+					},
+				},
+			}),
+		},
+	);
+	assert.equal(three.models[0]?.contextWindow, 32768);
+	assert.equal(three.models[0]?.maxTokens, 4096);
+	assert.deepEqual(detailsOf(three.events, "catalog_overlay_matches"), {
+		entries: [
+			{
+				publishedId: "qwen",
+				outcome: "ambiguous",
+				matchedKey: null,
+				competingKeys: ["C-dir", "B-dir", "A-dir"],
+			},
+		],
+	});
+});
+
+test("fetchModels falls back to global defaults when no overlay entry matches", async () => {
+	const stale = await fetchCatalog(
+		{ models: { object: "list", data: [{ id: "qwen" }] } },
+		{
+			modelSettingsPath: writeOverlay({
+				models: {
+					"A-dir": {
+						model_alias: "old",
+						max_context_window: 131072,
+						max_tokens: 8192,
+					},
+				},
+			}),
+		},
+	);
+	assert.deepEqual(stale.models, [
+		{ id: "qwen", contextWindow: 32768, maxTokens: 4096 },
+	]);
+	assert.deepEqual(detailsOf(stale.events, "catalog_overlay_matches"), {
+		entries: [
+			{
+				publishedId: "qwen",
+				outcome: "none",
+				matchedKey: null,
+				competingKeys: [],
+			},
+		],
+	});
+
+	const absent = await fetchCatalog({
+		models: { object: "list", data: [{ id: "qwen" }] },
+	});
+	assert.deepEqual(absent.models, [
+		{ id: "qwen", contextWindow: 32768, maxTokens: 4096 },
+	]);
+	assert.equal(
+		absent.events.some((event) => event.kind === "catalog_overlay_matches"),
+		false,
+	);
+
+	const caseOnly = await fetchCatalog(
+		{ models: { object: "list", data: [{ id: "qwen" }] } },
+		{
+			modelSettingsPath: writeOverlay({
+				models: {
+					"Qwen3-dir": {
+						model_alias: "QWEN",
+						max_context_window: 131072,
+						max_tokens: 8192,
+					},
+				},
+			}),
+		},
+	);
+	assert.deepEqual(caseOnly.models, [
+		{ id: "qwen", contextWindow: 32768, maxTokens: 4096 },
+	]);
+	assert.deepEqual(detailsOf(caseOnly.events, "catalog_overlay_matches"), {
+		entries: [
+			{
+				publishedId: "qwen",
+				outcome: "none",
+				matchedKey: null,
+				competingKeys: [],
+			},
+		],
+	});
+});
+
+test("fetchModels ignores an overlay file that parses to null", async () => {
+	const result = await fetchCatalog(
+		{ status: { models: [{ id: "m", ...L }] } },
+		{ modelSettingsPath: writeOverlay(null) },
+	);
+
+	assert.deepEqual(
+		result.models.map((model) => model.id),
+		["m"],
+	);
+	assert.deepEqual(result.calls, [`${BASE_URL}/models/status`]);
+	assert.deepEqual(
+		result.events.map((event) => event.kind),
+		[
+			"catalog_status_loaded",
+			"catalog_model_identity",
+			"catalog_local_settings_considered",
+			"catalog_local_settings_invalid",
+		],
 	);
 });

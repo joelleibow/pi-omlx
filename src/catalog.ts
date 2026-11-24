@@ -650,6 +650,88 @@ function withTimeout(
 	return ctl.signal;
 }
 
+/** How the overlay pass found, or failed to find, a model's entry. */
+type OverlayOutcome = "directory_key" | "alias_key" | "ambiguous" | "none";
+
+type OverlayMatch = {
+	publishedId: string;
+	outcome: OverlayOutcome;
+	matchedKey: string | null;
+	competingKeys: string[];
+};
+
+type OverlayLookup = {
+	entry: Record<string, unknown> | undefined;
+	matchedKey: string | null;
+	outcome: OverlayOutcome;
+	competingKeys: string[];
+};
+
+/**
+ * Finds one model's overlay entry. A model carrying a directory name is a status
+ * entry and matches only the key named by it; a fallback model matches the key
+ * equal to its published id, then the single entry whose `model_alias` is that
+ * id. A value that is not an object is no entry anywhere.
+ */
+function findOverlayEntry(
+	byModel: Record<string, unknown>,
+	model: OmlxModel,
+): OverlayLookup {
+	if (model.directoryName !== undefined) {
+		const entry = asRecord(byModel[model.directoryName]);
+		return entry
+			? {
+					entry,
+					matchedKey: model.directoryName,
+					outcome: "directory_key",
+					competingKeys: [],
+				}
+			: {
+					entry: undefined,
+					matchedKey: null,
+					outcome: "none",
+					competingKeys: [],
+				};
+	}
+
+	const exact = asRecord(byModel[model.id]);
+	if (exact) {
+		return {
+			entry: exact,
+			matchedKey: model.id,
+			outcome: "directory_key",
+			competingKeys: [],
+		};
+	}
+
+	const aliasKeys = Object.keys(byModel).filter(
+		(key) => asRecord(byModel[key])?.model_alias === model.id,
+	);
+	if (aliasKeys.length === 1) {
+		const [key] = aliasKeys;
+		return {
+			entry: asRecord(byModel[key]),
+			matchedKey: key,
+			outcome: "alias_key",
+			competingKeys: [],
+		};
+	}
+	if (aliasKeys.length > 1) {
+		return {
+			entry: undefined,
+			matchedKey: null,
+			outcome: "ambiguous",
+			competingKeys: aliasKeys,
+		};
+	}
+	return {
+		entry: undefined,
+		matchedKey: null,
+		outcome: "none",
+		competingKeys: [],
+	};
+}
+
 export function applyLocalModelSettings(
 	models: OmlxModel[],
 	apiRoot: string,
@@ -668,12 +750,9 @@ export function applyLocalModelSettings(
 	});
 	if (!path || !existsSync(path)) return models;
 
-	let settings: Record<string, unknown>;
+	let settings: unknown;
 	try {
-		settings = JSON.parse(readFileSync(path, "utf8")) as Record<
-			string,
-			unknown
-		>;
+		settings = JSON.parse(readFileSync(path, "utf8"));
 	} catch {
 		onDebug?.({
 			kind: "catalog_local_settings_read_failed",
@@ -682,8 +761,8 @@ export function applyLocalModelSettings(
 		return models;
 	}
 
-	const byModel = settings.models;
-	if (!byModel || typeof byModel !== "object" || Array.isArray(byModel)) {
+	const byModel = asRecord(asRecord(settings)?.models);
+	if (!byModel) {
 		onDebug?.({
 			kind: "catalog_local_settings_invalid",
 			details: { path, reason: "models object missing" },
@@ -691,28 +770,36 @@ export function applyLocalModelSettings(
 		return models;
 	}
 
-	return models.map((model) => {
-		const entry = (byModel as Record<string, unknown>)[model.id];
-		if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
-			return model;
-		}
-		const next = applyModelSettingsEntry(
-			model,
-			entry as Record<string, unknown>,
-		);
-		if (JSON.stringify(next) !== JSON.stringify(model)) {
+	const matches: OverlayMatch[] = [];
+	const applied = models.map((model) => {
+		const lookup = findOverlayEntry(byModel, model);
+		matches.push({
+			publishedId: model.id,
+			outcome: lookup.outcome,
+			matchedKey: lookup.matchedKey,
+			competingKeys: lookup.competingKeys,
+		});
+		if (lookup.entry === undefined || lookup.matchedKey === null) return model;
+		// The matched key is the model's directory name, so the applied event's
+		// before/after comparison sees it on both sides and the id never changes.
+		const before: OmlxModel = { ...model, directoryName: lookup.matchedKey };
+		const next = applyModelSettingsEntry(before, lookup.entry);
+		if (JSON.stringify(next) !== JSON.stringify(before)) {
 			onDebug?.({
 				kind: "catalog_local_model_settings_applied",
 				details: {
 					path,
 					modelId: model.id,
-					before: model,
+					before,
 					after: next,
 				},
 			});
 		}
 		return next;
 	});
+
+	onDebug?.({ kind: "catalog_overlay_matches", details: { entries: matches } });
+	return applied;
 }
 
 function applyModelSettingsEntry(

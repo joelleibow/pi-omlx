@@ -246,12 +246,12 @@ Every new `fetchModels` test that writes no overlay passes an explicit `modelSet
 
 ## 7. Verification
 
-- [ ] 7.1 Run `npm run check` and get Biome, the type check and the whole suite green.
+- [x] 7.1 Run `npm run check` and get Biome, the type check and the whole suite green.
   - **Covers:** the aborted-refresh and refusal paths, the timeout path, the stream suites, with 6.5's one new case, and the diagnostics suite behind the `PI_OMLX_DEBUG` predicate, which `src/debug.ts` supplies unchanged.
   - **Baseline:** 13 files and 108 tests at HEAD `e9aba43` (measured in `dr-resolve-s5.md`); the change creates no file, so the file count stays 13 and the test count rises.
   - **Verified by:** the command's own exit status.
 
-- [ ] 7.2 Run `openspec validate respect-omlx-model-alias --strict` and get 0 errors and 0 warnings.
+- [x] 7.2 Run `openspec validate respect-omlx-model-alias --strict` and get 0 errors and 0 warnings.
   - **Verified by:** the command's output.
 
 - [ ] 7.3 [Joel] Watch it work on his own server against the built extension, before the change is accepted.

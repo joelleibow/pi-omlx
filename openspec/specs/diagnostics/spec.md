@@ -7,7 +7,7 @@ Defines how a user turns the extension's stderr tracing on, and how the extensio
 
 ### Requirement: Debug Tracing Answers to PI_OMLX_DEBUG
 
-The extension SHALL turn stderr tracing on exactly when the predicate now at `src/debug.ts:18` holds for `PI_OMLX_DEBUG`, and SHALL change nothing else about which values enable tracing. Each emitted line SHALL carry the prefix `[pi-omlx]`, and the extension SHALL NOT read `PI_OMLX_PICKER_DEBUG` or emit `[pi-omlx-picker]`.
+The extension SHALL turn stderr tracing on exactly when the predicate now at `src/debug.ts:15` holds for `PI_OMLX_DEBUG`, and SHALL change nothing else about which values enable tracing. Each emitted line SHALL carry the prefix `[pi-omlx]`, and the extension SHALL NOT read `PI_OMLX_PICKER_DEBUG` or emit `[pi-omlx-picker]`.
 
 #### Scenario: Tracing stays off when the variable is unset
 
@@ -17,7 +17,7 @@ The extension SHALL turn stderr tracing on exactly when the predicate now at `sr
 #### Scenario: The empty string keeps today's answer
 
 - **WHEN** `PI_OMLX_DEBUG` is the empty string
-- **THEN** the extension emits diagnostics exactly when the predicate at `src/debug.ts:18` evaluates true for the empty string today
+- **THEN** the extension emits diagnostics exactly when the predicate at `src/debug.ts:15` evaluates true for the empty string today
 
 #### Scenario: A zero keeps today's answer
 

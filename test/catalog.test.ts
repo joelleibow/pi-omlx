@@ -1028,3 +1028,61 @@ test("fetchModels records the directory name on the status path", async () => {
 		],
 	);
 });
+
+// The published id on the /models fallback: the endpoint's own id, verbatim,
+// with no decline and no new field.
+
+test("fetchModels publishes the /models id verbatim and records null directory name and alias", async () => {
+	const { models, events } = await fetchCatalog({
+		models: { object: "list", data: [{ id: "qwen" }] },
+	});
+
+	assert.deepEqual(models, [
+		{ id: "qwen", contextWindow: 32768, maxTokens: 4096 },
+	]);
+	const identity = identityOf(events);
+	assert.equal(identity.endpoint, "models");
+	const [entry] = identityEntries(events);
+	assert.deepEqual(entry, {
+		endpointId: "qwen",
+		directoryName: null,
+		alias: null,
+		publishedId: "qwen",
+		declined: null,
+	});
+});
+
+test("fetchModels publishes /models ids that differ only by case and names the pair", async () => {
+	const { models, events } = await fetchCatalog({
+		models: {
+			object: "list",
+			data: [{ id: "qwen" }, { id: "Qwen" }, { id: "qwen" }],
+		},
+	});
+
+	assert.deepEqual(
+		models.map((model) => model.id),
+		["qwen", "Qwen"],
+	);
+	const identity = identityOf(events);
+	assert.deepEqual(identity.discardedDuplicates, ["qwen"]);
+	assert.deepEqual(identity.caseOnlyPairs, [{ a: "qwen", b: "Qwen" }]);
+});
+
+test("fetchModels publishes one id for a model both endpoints list", async () => {
+	const status = await fetchCatalog({
+		status: { models: [{ id: "Qwen3-dir", model_alias: "qwen", ...L }] },
+	});
+	const fallback = await fetchCatalog({
+		models: { object: "list", data: [{ id: "qwen" }] },
+	});
+
+	assert.deepEqual(
+		status.models.map((model) => model.id),
+		["qwen"],
+	);
+	assert.deepEqual(
+		fallback.models.map((model) => model.id),
+		["qwen"],
+	);
+});

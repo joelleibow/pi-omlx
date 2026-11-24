@@ -92,7 +92,7 @@ Every new `fetchModels` test that writes no overlay passes an explicit `modelSet
 
 ## 3. The published id on the `/models` fallback
 
-- [ ] 3.1 Publish the id `/models` returned, verbatim, with no decline.
+- [x] 3.1 Publish the id `/models` returned, verbatim, with no decline.
   - **Code:** none; 2.2's identity step records the `/models` path.
   - **Failing test first:** `fetchModels publishes the /models id verbatim and records null directory name and alias` — `/models/status` answers 404, `/models` answers with an alias id, and the assertions are the returned models deep-equal `[{ id: "qwen", contextWindow: 32768, maxTokens: 4096 }]`, the identity event's `endpoint: "models"`, `entries[].directoryName: null`, `entries[].alias: null` and `declined: null`.
   - **Boundary cases:** an alias id that also matches no overlay entry.
@@ -100,7 +100,7 @@ Every new `fetchModels` test that writes no overlay passes an explicit `modelSet
   - **Red/green:** none (no prototype); `dr-resolve-s5.md` RDY-4 proves the test discriminates; `redgreen-derek.md` A23 (red at HEAD through the missing identity event, green on the build, with the mutation measured).
   - **Verified by:** `npx vitest run test/catalog.test.ts`.
 
-- [ ] 3.2 Publish case-only duplicates as reported, and collapse exact duplicates only.
+- [x] 3.2 Publish case-only duplicates as reported, and collapse exact duplicates only.
   - **Code:** none; 2.2 and 2.4 built it.
   - **Failing test first:** `fetchModels publishes /models ids that differ only by case and names the pair` — `/models` returns `[{ id: "qwen" }, { id: "Qwen" }, { id: "qwen" }]`, expecting ids `["qwen", "Qwen"]`, `discardedDuplicates: ["qwen"]` and `caseOnlyPairs: [{ a: "qwen", b: "Qwen" }]`.
   - **Boundary cases:** two ids differing by case; a repeated exact id; both in one response.
@@ -108,7 +108,7 @@ Every new `fetchModels` test that writes no overlay passes an explicit `modelSet
   - **Red/green:** `dr-resolve-s3-r1.md S3-R1-01` (measured the discarded id in `[qwen, Qwen, qwen]`); `redgreen-derek.md` A24 (the case-only pair and the discarded id, with the mutation measured).
   - **Verified by:** `npx vitest run test/catalog.test.ts`.
 
-- [ ] 3.3 Prove both endpoints publish one id for the models they share.
+- [x] 3.3 Prove both endpoints publish one id for the models they share.
   - **Code:** none; 2.3 built it.
   - **Failing test first:** `fetchModels publishes one id for a model both endpoints list` — status `[{ id: "Qwen3-dir", model_alias: "qwen", L }]` in one run; status 404 and `/models` `[{ id: "qwen" }]`, under the preamble's global-defaults stub, in the other; both runs' ids deep-equal `["qwen"]`.
   - **Boundary cases:** none.

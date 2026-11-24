@@ -254,7 +254,7 @@ Every new `fetchModels` test that writes no overlay passes an explicit `modelSet
 - [x] 7.2 Run `openspec validate respect-omlx-model-alias --strict` and get 0 errors and 0 warnings.
   - **Verified by:** the command's output.
 
-- [ ] 7.3 [Joel] Watch it work on his own server against the built extension, before the change is accepted.
+- [x] 7.3 [Joel] Watch it work on his own server against the built extension, before the change is accepted. Joel, 2026-11-23: "Things looked great!!! Working as expected." His `/model omlx` picker showed the three OMLX models once each, under their aliases `Qwen3.6-4bit`, `Qwen3.8-pi-MLX-4bit` and `ThinkingCap-Qwen3.8-MLX-4bit`.
   - **Checks:** `/model <alias>` switches to the model without opening the picker; a fresh start with the alias saved as `defaultModel` opens on that model; and `Ctrl+S` on the alias row in `/model` heals a saved folder-name default; and typing one aliased model's folder name into the `/model` picker's search finds that model, which on his server has no `display_name`, so the folder name is its label (`council.md` R12; `~/Projects/AGENTS.md`, "Nothing is done on an application change until Joel has watched it work").
   - **Red/green:** none (his observation, not a test). The conductor ticks this with his words; no implementer does.
 

@@ -16,6 +16,8 @@ x-marbleization:
       status: passed
       note: "Rounds 1-4 ran council-readiness alone. Rounds 5, 6 and 7 ran readiness, codebase and structural and were all clean; round 7 followed the red/green patch."
     implement: approved
+    validate: approved
+    joel_live_check: passed
     implement_note: "Approved at 727ec65 with three minor findings; finding 1 (identity record built from the entry) is being fixed under the own-the-whole-change rule."
   branch: respect-omlx-model-alias
   base: e9aba43

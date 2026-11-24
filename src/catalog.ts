@@ -384,7 +384,7 @@ type CatalogIdentity = {
 
 type IdentifiedModel = {
 	model: OmlxModel;
-	declined: DeclinedAlias | null;
+	entry: IdentityEntry;
 };
 
 /**
@@ -412,21 +412,24 @@ function identifyModels(
 	const identified: IdentifiedModel[] = kept.map((model, index) =>
 		endpoint === "status"
 			? identifyStatusModel(model, index, kept)
-			: { model, declined: null },
+			: {
+					model,
+					entry: {
+						endpointId: model.id,
+						directoryName: null,
+						alias: null,
+						publishedId: model.id,
+						declined: null,
+					},
+				},
 	);
-	const models = identified.map((entry) => entry.model);
+	const models = identified.map((identifiedModel) => identifiedModel.model);
 
 	return {
 		models,
 		identity: {
 			endpoint,
-			entries: identified.map((entry) => ({
-				endpointId: entry.model.directoryName ?? entry.model.id,
-				directoryName: entry.model.directoryName ?? null,
-				alias: entry.model.modelAlias ?? null,
-				publishedId: entry.model.id,
-				declined: entry.declined,
-			})),
+			entries: identified.map((identifiedModel) => identifiedModel.entry),
 			discardedDuplicates,
 			caseOnlyPairs: caseOnlyPairsOf(models.map((model) => model.id)),
 		},
@@ -446,13 +449,17 @@ function identifyStatusModel(
 	const alias = model.modelAlias;
 	const declined =
 		alias === undefined ? null : declineReason(alias, index, kept);
+	const publishedId =
+		declined === null && alias !== undefined ? alias : model.id;
 	return {
-		model: {
-			...model,
-			id: declined === null && alias !== undefined ? alias : model.id,
+		model: { ...model, id: publishedId, directoryName: model.id },
+		entry: {
+			endpointId: model.id,
 			directoryName: model.id,
+			alias: alias ?? null,
+			publishedId,
+			declined,
 		},
-		declined,
 	};
 }
 

@@ -536,6 +536,33 @@ test("a request for a model in no list is left alone", async () => {
 	);
 });
 
+// The id re-key can leave a session's model out of a populated list. At pi's
+// `off` level the request still needs the off controls, so a stale session does
+// not start thinking against the user's choice.
+test("a list miss at thinking level off applies the off controls", async () => {
+	await driveExtension(
+		{},
+		async ({ providers, setThinkingLevel, beforeProviderRequest }) => {
+			const provider = providers[0];
+			assert.ok(provider, "the factory registered no provider");
+			await restoreCatalog(provider, [restoredModel("other-model", true)]);
+			setThinkingLevel("off");
+
+			assert.deepEqual(
+				beforeProviderRequest(
+					{ payload: { model: "unknown", thinking_budget: 1024 } },
+					{ model: { provider: "omlx", id: "unknown" } },
+				),
+				{
+					model: "unknown",
+					thinking_budget: 0,
+					chat_template_kwargs: { enable_thinking: false },
+				},
+			);
+		},
+	);
+});
+
 // environment-configuration: a `.env` beside the entry module configures
 // nothing. The copy is what a user installing from the repository has, so a read
 // from the working directory, or of another filename, would stay green.

@@ -217,7 +217,7 @@ Every new `fetchModels` test that writes no overlay passes an explicit `modelSet
   - **Red/green:** none (no prototype; the existing test is the proof); `redgreen-derek.md` A42 (the existing test passing unchanged at base and on the build).
   - **Verified by:** `npx vitest run test/refresh.test.ts`.
 
-- [ ] 6.3 Apply the off controls on a list miss at thinking level `off` in `before_provider_request`.
+- [x] 6.3 Apply the off controls on a list miss at thinking level `off` in `before_provider_request`.
   - **Code:** under the existing `omlx` guard, when the session's model is absent from the provider list and `pi.getThinkingLevel() === "off"`, apply `applyOmlxThinkingControls(event.payload, "off")`; at every other level leave the payload untouched and read no stale `reasoning`. The comment at `index.ts:57-58` is rewritten to that contract; the hook carries no alias or directory knowledge.
   - **Failing test first:** `a list miss at thinking level off applies the off controls` in `test/index.test.ts` — on `driveExtension`, with `const provider = providers[0]` restored through `await restoreCatalog(provider, [restoredModel("other-model", true)])` (`test/index.test.ts:447`, `:465-480`), then `setThinkingLevel("off")`, `beforeProviderRequest({ payload: { model: "unknown", thinking_budget: 1024 } }, { model: { provider: "omlx", id: "unknown" } })` deep-equals the literal `{ model: "unknown", thinking_budget: 0, chat_template_kwargs: { enable_thinking: false } }`, the same payload and model as `a request for a model in no list is left alone`, but missing from a populated list, which is the case design R8 exists for; red at HEAD, which returns `undefined`.
   - **Holds:** `a request for a model in no list is left alone`, which already sets level `high`.
@@ -226,7 +226,7 @@ Every new `fetchModels` test that writes no overlay passes an explicit `modelSet
   - **Red/green:** `michael-council-rulings.md` R8 (the off-only branch measured equal to reading `ctx.model.reasoning` in 12 of 12 reasoning × level cases); `dr-resolve-s5-r3.md` RDY3-3 (the pinned test red at HEAD and green with the branch); `dr-resolve-s5-r5.md` CB-R5-1 (the populated-list test and the empty-list-only mutation); `redgreen-derek.md` A43 (red at HEAD and green with the branch, with the populated-list mutation measured).
   - **Verified by:** `npx vitest run test/index.test.ts`.
 
-- [ ] 6.4 Keep the login probe counting the same models, with no code change.
+- [x] 6.4 Keep the login probe counting the same models, with no code change.
   - **Code:** none — `src/login.ts:55-66` reads `fetchModels` and then `registrableModels`, both unchanged in contract.
   - **Failing test first:** none. The count is proven where the list is built: 2.2's `fetchModels collapses exact duplicate /models ids and names the discarded id`, 2.5's `fetchModels publishes a declined model under its endpoint id and succeeds`, and 3.2's `fetchModels publishes /models ids that differ only by case and names the pair`. `test/login.test.ts` holds unchanged and proves only the wiring; none of its fixtures carries an alias or a duplicate.
   - **Shown failing by:**

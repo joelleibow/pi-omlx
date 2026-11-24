@@ -236,7 +236,7 @@ Every new `fetchModels` test that writes no overlay passes an explicit `modelSet
   - **Red/green:** `dr-resolve-s5-r2.md` RDY2-2 (each mutation measured; the login and stream suites stay green under all of them); `redgreen-derek.md` A44 (the login suite green under all three mutations Derek ran).
   - **Verified by:** `npx vitest run test/login.test.ts`.
 
-- [ ] 6.5 Prove a stream event names the model by its published id, not its label.
+- [x] 6.5 Prove a stream event names the model by its published id, not its label.
   - **Code:** none; `errorAssistantMessage` names the model by `model.id` (`src/stream-events.ts:53`), and `toProviderModel`'s `id` is the published id (6.1).
   - **Proof test (green at HEAD):** `a terminal stream error names the model by its id, not its label` in `test/stream.test.ts`. It takes the existing `OMLX_MODEL` (`id: "qwen-test"`, `name: "Qwen Test"`) through the pre-aborted path of `a pre-aborted parent signal surfaces as an aborted terminal error` (`test/stream.test.ts:289-311`), which stays unchanged. It asserts the last event's `type` is `"error"`, `OMLX_MODEL.id !== OMLX_MODEL.name`, and `error.model` equals `OMLX_MODEL.id`.
   - **Shown failing by:** name the model by `model.name` in `errorAssistantMessage`; this test fails.

@@ -308,3 +308,32 @@ test("a pre-aborted parent signal surfaces as an aborted terminal error", async 
 	assert.equal(last?.type, "error");
 	assert.equal((last as { reason: string }).reason, "aborted");
 });
+
+// The published id is the wire value and the name a stream event carries, so a
+// model whose label differs from its id must still be named by the id.
+test("a terminal stream error names the model by its id, not its label", async () => {
+	const controller = new AbortController();
+	controller.abort();
+	const partial = blankAssistant();
+	innerStreamModule.queue([
+		startEvent(partial),
+		textDelta(partial, "x"),
+		doneEvent(partial),
+	]);
+
+	const stream = streamOmlxOpenAICompletions(
+		OMLX_MODEL,
+		EMPTY_CONTEXT,
+		{ signal: controller.signal } as SimpleStreamOptions,
+		5_000,
+	);
+
+	const events = await collect(stream);
+	const last = events.at(-1);
+	assert.equal(last?.type, "error");
+	assert.notEqual(OMLX_MODEL.id, OMLX_MODEL.name);
+	assert.equal(
+		(last as { error: AssistantMessage }).error.model,
+		OMLX_MODEL.id,
+	);
+});

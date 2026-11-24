@@ -16,6 +16,10 @@ import { thinkingFormatFor } from "./thinking-format.ts";
 export interface OmlxModel {
 	id: string;
 	displayName?: string;
+	/** OMLX's own directory name for the model, when the endpoint reports it. */
+	directoryName?: string;
+	/** OMLX's `model_alias`, when the endpoint reports a set one. */
+	modelAlias?: string;
 	contextWindow?: number;
 	maxTokens?: number;
 	/** Model architectural ceiling (`max_model_len`). Prio-3 fallback and clamp limit. */
@@ -48,6 +52,7 @@ interface OmlxModelsStatusResponse {
 		model_type?: string | null;
 		engine_type?: string | null;
 		model_type_override?: string | null;
+		model_alias?: string | null;
 	}>;
 }
 
@@ -68,12 +73,9 @@ export function parseModelsResponse(json: unknown): OmlxModel[] {
 	if (!r || !Array.isArray(r.data)) {
 		throw new Error("OMLX /models response is missing `data` array");
 	}
-	const seen = new Set<string>();
 	const out: OmlxModel[] = [];
 	for (const entry of r.data) {
 		if (!entry || typeof entry.id !== "string" || !entry.id) continue;
-		if (seen.has(entry.id)) continue;
-		seen.add(entry.id);
 		const m: OmlxModel = { id: entry.id };
 		if (typeof entry.max_model_len === "number" && entry.max_model_len > 0)
 			m.archContextWindow = entry.max_model_len;
@@ -87,13 +89,14 @@ export function parseModelsStatusResponse(json: unknown): OmlxModel[] {
 	if (!r || !Array.isArray(r.models)) {
 		throw new Error("OMLX /models/status response is missing `models` array");
 	}
-	const seen = new Set<string>();
 	const out: OmlxModel[] = [];
 	for (const entry of r.models) {
 		if (!entry || typeof entry.id !== "string" || !entry.id) continue;
-		if (seen.has(entry.id)) continue;
-		seen.add(entry.id);
 		const m: OmlxModel = { id: entry.id };
+		// R7's unset rule as field extraction: absent, null, non-string and ""
+		// are unset; every other string is set, byte for byte.
+		if (typeof entry.model_alias === "string" && entry.model_alias !== "")
+			m.modelAlias = entry.model_alias;
 		if (typeof entry.display_name === "string" && entry.display_name.trim())
 			m.displayName = entry.display_name;
 		if (typeof entry.max_context_window === "number")
@@ -361,10 +364,136 @@ async function fetchParsedCatalog(
 	return { endpoint: "models", models };
 }
 
+/** Why the identity step declined a set alias, in the closed set R11 states. */
+type DeclinedAlias = "duplicate_alias" | "alias_matches_model_id";
+
+type IdentityEntry = {
+	endpointId: string;
+	directoryName: string | null;
+	alias: string | null;
+	publishedId: string;
+	declined: DeclinedAlias | null;
+};
+
+type CatalogIdentity = {
+	endpoint: CatalogEndpoint;
+	entries: IdentityEntry[];
+	discardedDuplicates: string[];
+	caseOnlyPairs: Array<{ a: string; b: string }>;
+};
+
+type IdentifiedModel = {
+	model: OmlxModel;
+	declined: DeclinedAlias | null;
+};
+
 /**
- * The steps every fetch runs once its endpoint has answered: the local overlay,
- * then the server's global defaults, then the architectural clamp. The overlay
- * and defaults steps keep rethrowing an abort.
+ * The one rule that chooses each model's published id. Exact duplicate endpoint
+ * ids collapse to the first, and on `/models/status` a set alias publishes only
+ * when no other entry claims it, ignoring case. Pure and non-throwing: it
+ * returns the details, and `fetchModels` traces them.
+ */
+function identifyModels(
+	parsed: readonly OmlxModel[],
+	endpoint: CatalogEndpoint,
+): { models: OmlxModel[]; identity: CatalogIdentity } {
+	const kept: OmlxModel[] = [];
+	const discardedDuplicates: string[] = [];
+	const seen = new Set<string>();
+	for (const model of parsed) {
+		if (seen.has(model.id)) {
+			discardedDuplicates.push(model.id);
+			continue;
+		}
+		seen.add(model.id);
+		kept.push(model);
+	}
+
+	const identified: IdentifiedModel[] = kept.map((model, index) =>
+		endpoint === "status"
+			? identifyStatusModel(model, index, kept)
+			: { model, declined: null },
+	);
+	const models = identified.map((entry) => entry.model);
+
+	return {
+		models,
+		identity: {
+			endpoint,
+			entries: identified.map((entry) => ({
+				endpointId: entry.model.directoryName ?? entry.model.id,
+				directoryName: entry.model.directoryName ?? null,
+				alias: entry.model.modelAlias ?? null,
+				publishedId: entry.model.id,
+				declined: entry.declined,
+			})),
+			discardedDuplicates,
+			caseOnlyPairs: caseOnlyPairsOf(models.map((model) => model.id)),
+		},
+	};
+}
+
+/**
+ * One status entry's published id: the alias when R6 accepts it, the endpoint id
+ * otherwise. The endpoint id stays on the model as its directory name, so the
+ * overlay lookup and the label can both read it.
+ */
+function identifyStatusModel(
+	model: OmlxModel,
+	index: number,
+	kept: readonly OmlxModel[],
+): IdentifiedModel {
+	const alias = model.modelAlias;
+	const declined =
+		alias === undefined ? null : declineReason(alias, index, kept);
+	return {
+		model: {
+			...model,
+			id: declined === null && alias !== undefined ? alias : model.id,
+			directoryName: model.id,
+		},
+		declined,
+	};
+}
+
+/**
+ * Why a set alias cannot publish: it equals, ignoring case, another entry's
+ * endpoint id or another entry's alias. A model id wins over an alias, because
+ * OMLX resolves model ids before aliases.
+ */
+function declineReason(
+	alias: string,
+	index: number,
+	kept: readonly OmlxModel[],
+): DeclinedAlias | null {
+	const folded = alias.toLowerCase();
+	let matchesAlias = false;
+	for (const [otherIndex, other] of kept.entries()) {
+		if (otherIndex === index) continue;
+		if (other.id.toLowerCase() === folded) return "alias_matches_model_id";
+		if (other.modelAlias?.toLowerCase() === folded) matchesAlias = true;
+	}
+	return matchesAlias ? "duplicate_alias" : null;
+}
+
+/** Every unordered pair of distinct published ids that fold equal. */
+function caseOnlyPairsOf(
+	ids: readonly string[],
+): Array<{ a: string; b: string }> {
+	const pairs: Array<{ a: string; b: string }> = [];
+	for (let i = 0; i < ids.length; i += 1) {
+		for (let j = i + 1; j < ids.length; j += 1) {
+			if (ids[i].toLowerCase() === ids[j].toLowerCase())
+				pairs.push({ a: ids[i], b: ids[j] });
+		}
+	}
+	return pairs;
+}
+
+/**
+ * The steps every fetch runs once its endpoint has answered: the identity rule,
+ * the local overlay, the server's global defaults and the architectural clamp.
+ * The overlay and defaults steps keep rethrowing an abort.
  */
 async function applyPostParsePipeline(
 	parsed: ParsedCatalog,
@@ -373,15 +502,17 @@ async function applyPostParsePipeline(
 	opts: FetchContext,
 	timeoutMs: number,
 ): Promise<OmlxModel[]> {
-	const models = applyLocalModelSettings(
-		parsed.models,
+	const { models, identity } = identifyModels(parsed.models, parsed.endpoint);
+	opts.onDebug?.({ kind: "catalog_model_identity", details: identity });
+	const withOverlay = applyLocalModelSettings(
+		models,
 		apiRoot,
 		opts.modelSettingsPath,
 		opts.onDebug,
 	);
 	return resolveArchContextLimits(
 		await applyApiGlobalDefaultsIfNeeded(
-			models,
+			withOverlay,
 			apiRoot,
 			apiKey,
 			opts.signal,

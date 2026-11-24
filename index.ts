@@ -54,9 +54,15 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 		const activeModel = provider
 			.getModels()
 			.find((model) => model.id === ctx.model?.id);
-		// A model in no list has no default to apply: leave the payload alone
-		// rather than writing thinking off for a model we know nothing about.
-		if (!activeModel) return;
+		if (!activeModel) {
+			// A session's model can leave the list when a refresh re-keys its id.
+			// Pi's own level is what the user sees, so an explicit `off` still
+			// applies; at any other level the payload is left alone rather than
+			// guessed at from a stale model object.
+			if (pi.getThinkingLevel() === "off")
+				return applyOmlxThinkingControls(event.payload, "off");
+			return;
+		}
 		return applyOmlxThinkingControls(
 			event.payload,
 			pi.getThinkingLevel(),

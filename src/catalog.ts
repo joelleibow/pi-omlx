@@ -16,6 +16,10 @@ import { thinkingFormatFor } from "./thinking-format.ts";
 export interface OmlxModel {
 	id: string;
 	displayName?: string;
+	/** OMLX's own directory name for the model, when the endpoint reports it. */
+	directoryName?: string;
+	/** OMLX's `model_alias`, when the endpoint reports a set one. */
+	modelAlias?: string;
 	contextWindow?: number;
 	maxTokens?: number;
 	/** Model architectural ceiling (`max_model_len`). Prio-3 fallback and clamp limit. */
@@ -48,6 +52,7 @@ interface OmlxModelsStatusResponse {
 		model_type?: string | null;
 		engine_type?: string | null;
 		model_type_override?: string | null;
+		model_alias?: string | null;
 	}>;
 }
 
@@ -68,12 +73,9 @@ export function parseModelsResponse(json: unknown): OmlxModel[] {
 	if (!r || !Array.isArray(r.data)) {
 		throw new Error("OMLX /models response is missing `data` array");
 	}
-	const seen = new Set<string>();
 	const out: OmlxModel[] = [];
 	for (const entry of r.data) {
 		if (!entry || typeof entry.id !== "string" || !entry.id) continue;
-		if (seen.has(entry.id)) continue;
-		seen.add(entry.id);
 		const m: OmlxModel = { id: entry.id };
 		if (typeof entry.max_model_len === "number" && entry.max_model_len > 0)
 			m.archContextWindow = entry.max_model_len;
@@ -87,13 +89,14 @@ export function parseModelsStatusResponse(json: unknown): OmlxModel[] {
 	if (!r || !Array.isArray(r.models)) {
 		throw new Error("OMLX /models/status response is missing `models` array");
 	}
-	const seen = new Set<string>();
 	const out: OmlxModel[] = [];
 	for (const entry of r.models) {
 		if (!entry || typeof entry.id !== "string" || !entry.id) continue;
-		if (seen.has(entry.id)) continue;
-		seen.add(entry.id);
 		const m: OmlxModel = { id: entry.id };
+		// R7's unset rule as field extraction: absent, null, non-string and ""
+		// are unset; every other string is set, byte for byte.
+		if (typeof entry.model_alias === "string" && entry.model_alias !== "")
+			m.modelAlias = entry.model_alias;
 		if (typeof entry.display_name === "string" && entry.display_name.trim())
 			m.displayName = entry.display_name;
 		if (typeof entry.max_context_window === "number")
@@ -254,7 +257,7 @@ export function toProviderModel(
 	const reasoning = m.thinkingDefault === true;
 	return {
 		id: m.id,
-		name: m.displayName ?? m.id,
+		name: m.displayName ?? m.directoryName ?? m.id,
 		api: "openai-completions",
 		provider: PROVIDER_KEY,
 		baseUrl,
@@ -286,19 +289,42 @@ export function registrableModels(models: readonly OmlxModel[]): OmlxModel[] {
 
 export const DEFAULT_FETCH_TIMEOUT_MS = 15_000;
 
+interface FetchContext {
+	signal?: AbortSignal;
+	timeoutMs?: number;
+	modelSettingsPath?: string;
+	onDebug?: (event: CatalogDebugEvent) => void;
+}
+
+/** The endpoint that answered a fetch, and the entries it returned in order. */
+interface ParsedCatalog {
+	endpoint: CatalogEndpoint;
+	models: OmlxModel[];
+}
+
+type CatalogEndpoint = "status" | "models";
+
 export async function fetchModels(
 	apiRoot: string,
 	apiKey: string,
-	opts: {
-		signal?: AbortSignal;
-		timeoutMs?: number;
-		modelSettingsPath?: string;
-		onDebug?: (event: CatalogDebugEvent) => void;
-	} = {},
+	opts: FetchContext = {},
 ): Promise<OmlxModel[]> {
 	const timeoutMs = opts.timeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS;
-	let models: OmlxModel[];
+	const parsed = await fetchParsedCatalog(apiRoot, apiKey, opts, timeoutMs);
+	return applyPostParsePipeline(parsed, apiRoot, apiKey, opts, timeoutMs);
+}
 
+/**
+ * The endpoint that answered, parsed and counted. The `/models/status` request
+ * and parse stay in the `try` and the `/models` pair runs in the `catch`, so a
+ * server without the status endpoint still publishes its catalog.
+ */
+async function fetchParsedCatalog(
+	apiRoot: string,
+	apiKey: string,
+	opts: FetchContext,
+	timeoutMs: number,
+): Promise<ParsedCatalog> {
 	try {
 		const json = await getJson(
 			`${apiRoot}/models/status`,
@@ -306,27 +332,12 @@ export async function fetchModels(
 			opts.signal,
 			timeoutMs,
 		);
-		models = parseModelsStatusResponse(json);
+		const models = parseModelsStatusResponse(json);
 		opts.onDebug?.({
 			kind: "catalog_status_loaded",
 			details: { apiRoot, count: models.length },
 		});
-		models = applyLocalModelSettings(
-			models,
-			apiRoot,
-			opts.modelSettingsPath,
-			opts.onDebug,
-		);
-		return resolveArchContextLimits(
-			await applyApiGlobalDefaultsIfNeeded(
-				models,
-				apiRoot,
-				apiKey,
-				opts.signal,
-				timeoutMs,
-				opts.onDebug,
-			),
-		);
+		return { endpoint: "status", models };
 	} catch (err) {
 		if (err instanceof Error && err.name === "AbortError") throw err;
 		opts.onDebug?.({
@@ -345,12 +356,162 @@ export async function fetchModels(
 		opts.signal,
 		timeoutMs,
 	);
-	models = parseModelsResponse(json);
+	const models = parseModelsResponse(json);
 	opts.onDebug?.({
 		kind: "catalog_models_loaded",
 		details: { apiRoot, count: models.length },
 	});
-	models = applyLocalModelSettings(
+	return { endpoint: "models", models };
+}
+
+/** Why the identity step declined a set alias, in the closed set R11 states. */
+type DeclinedAlias = "duplicate_alias" | "alias_matches_model_id";
+
+type IdentityEntry = {
+	endpointId: string;
+	directoryName: string | null;
+	alias: string | null;
+	publishedId: string;
+	declined: DeclinedAlias | null;
+};
+
+type CatalogIdentity = {
+	endpoint: CatalogEndpoint;
+	entries: IdentityEntry[];
+	discardedDuplicates: string[];
+	caseOnlyPairs: Array<{ a: string; b: string }>;
+};
+
+type IdentifiedModel = {
+	model: OmlxModel;
+	entry: IdentityEntry;
+};
+
+/**
+ * The one rule that chooses each model's published id. Exact duplicate endpoint
+ * ids collapse to the first, and on `/models/status` a set alias publishes only
+ * when no other entry claims it, ignoring case. Pure and non-throwing: it
+ * returns the details, and `fetchModels` traces them.
+ */
+function identifyModels(
+	parsed: readonly OmlxModel[],
+	endpoint: CatalogEndpoint,
+): { models: OmlxModel[]; identity: CatalogIdentity } {
+	const kept: OmlxModel[] = [];
+	const discardedDuplicates: string[] = [];
+	const seen = new Set<string>();
+	for (const model of parsed) {
+		if (seen.has(model.id)) {
+			discardedDuplicates.push(model.id);
+			continue;
+		}
+		seen.add(model.id);
+		kept.push(model);
+	}
+
+	const identified: IdentifiedModel[] = kept.map((model, index) =>
+		endpoint === "status"
+			? identifyStatusModel(model, index, kept)
+			: {
+					model,
+					entry: {
+						endpointId: model.id,
+						directoryName: null,
+						alias: null,
+						publishedId: model.id,
+						declined: null,
+					},
+				},
+	);
+	const models = identified.map((identifiedModel) => identifiedModel.model);
+
+	return {
+		models,
+		identity: {
+			endpoint,
+			entries: identified.map((identifiedModel) => identifiedModel.entry),
+			discardedDuplicates,
+			caseOnlyPairs: caseOnlyPairsOf(models.map((model) => model.id)),
+		},
+	};
+}
+
+/**
+ * One status entry's published id: the alias when R6 accepts it, the endpoint id
+ * otherwise. The endpoint id stays on the model as its directory name, so the
+ * overlay lookup and the label can both read it.
+ */
+function identifyStatusModel(
+	model: OmlxModel,
+	index: number,
+	kept: readonly OmlxModel[],
+): IdentifiedModel {
+	const alias = model.modelAlias;
+	const declined =
+		alias === undefined ? null : declineReason(alias, index, kept);
+	const publishedId =
+		declined === null && alias !== undefined ? alias : model.id;
+	return {
+		model: { ...model, id: publishedId, directoryName: model.id },
+		entry: {
+			endpointId: model.id,
+			directoryName: model.id,
+			alias: alias ?? null,
+			publishedId,
+			declined,
+		},
+	};
+}
+
+/**
+ * Why a set alias cannot publish: it equals, ignoring case, another entry's
+ * endpoint id or another entry's alias. A model id wins over an alias, because
+ * OMLX resolves model ids before aliases.
+ */
+function declineReason(
+	alias: string,
+	index: number,
+	kept: readonly OmlxModel[],
+): DeclinedAlias | null {
+	const folded = alias.toLowerCase();
+	let matchesAlias = false;
+	for (const [otherIndex, other] of kept.entries()) {
+		if (otherIndex === index) continue;
+		if (other.id.toLowerCase() === folded) return "alias_matches_model_id";
+		if (other.modelAlias?.toLowerCase() === folded) matchesAlias = true;
+	}
+	return matchesAlias ? "duplicate_alias" : null;
+}
+
+/** Every unordered pair of distinct published ids that fold equal. */
+function caseOnlyPairsOf(
+	ids: readonly string[],
+): Array<{ a: string; b: string }> {
+	const pairs: Array<{ a: string; b: string }> = [];
+	for (let i = 0; i < ids.length; i += 1) {
+		for (let j = i + 1; j < ids.length; j += 1) {
+			if (ids[i].toLowerCase() === ids[j].toLowerCase())
+				pairs.push({ a: ids[i], b: ids[j] });
+		}
+	}
+	return pairs;
+}
+
+/**
+ * The steps every fetch runs once its endpoint has answered: the identity rule,
+ * the local overlay, the server's global defaults and the architectural clamp.
+ * The overlay and defaults steps keep rethrowing an abort.
+ */
+async function applyPostParsePipeline(
+	parsed: ParsedCatalog,
+	apiRoot: string,
+	apiKey: string,
+	opts: FetchContext,
+	timeoutMs: number,
+): Promise<OmlxModel[]> {
+	const { models, identity } = identifyModels(parsed.models, parsed.endpoint);
+	opts.onDebug?.({ kind: "catalog_model_identity", details: identity });
+	const withOverlay = applyLocalModelSettings(
 		models,
 		apiRoot,
 		opts.modelSettingsPath,
@@ -358,7 +519,7 @@ export async function fetchModels(
 	);
 	return resolveArchContextLimits(
 		await applyApiGlobalDefaultsIfNeeded(
-			models,
+			withOverlay,
 			apiRoot,
 			apiKey,
 			opts.signal,
@@ -496,6 +657,88 @@ function withTimeout(
 	return ctl.signal;
 }
 
+/** How the overlay pass found, or failed to find, a model's entry. */
+type OverlayOutcome = "directory_key" | "alias_key" | "ambiguous" | "none";
+
+type OverlayMatch = {
+	publishedId: string;
+	outcome: OverlayOutcome;
+	matchedKey: string | null;
+	competingKeys: string[];
+};
+
+type OverlayLookup = {
+	entry: Record<string, unknown> | undefined;
+	matchedKey: string | null;
+	outcome: OverlayOutcome;
+	competingKeys: string[];
+};
+
+/**
+ * Finds one model's overlay entry. A model carrying a directory name is a status
+ * entry and matches only the key named by it; a fallback model matches the key
+ * equal to its published id, then the single entry whose `model_alias` is that
+ * id. A value that is not an object is no entry anywhere.
+ */
+function findOverlayEntry(
+	byModel: Record<string, unknown>,
+	model: OmlxModel,
+): OverlayLookup {
+	if (model.directoryName !== undefined) {
+		const entry = asRecord(byModel[model.directoryName]);
+		return entry
+			? {
+					entry,
+					matchedKey: model.directoryName,
+					outcome: "directory_key",
+					competingKeys: [],
+				}
+			: {
+					entry: undefined,
+					matchedKey: null,
+					outcome: "none",
+					competingKeys: [],
+				};
+	}
+
+	const exact = asRecord(byModel[model.id]);
+	if (exact) {
+		return {
+			entry: exact,
+			matchedKey: model.id,
+			outcome: "directory_key",
+			competingKeys: [],
+		};
+	}
+
+	const aliasKeys = Object.keys(byModel).filter(
+		(key) => asRecord(byModel[key])?.model_alias === model.id,
+	);
+	if (aliasKeys.length === 1) {
+		const [key] = aliasKeys;
+		return {
+			entry: asRecord(byModel[key]),
+			matchedKey: key,
+			outcome: "alias_key",
+			competingKeys: [],
+		};
+	}
+	if (aliasKeys.length > 1) {
+		return {
+			entry: undefined,
+			matchedKey: null,
+			outcome: "ambiguous",
+			competingKeys: aliasKeys,
+		};
+	}
+	return {
+		entry: undefined,
+		matchedKey: null,
+		outcome: "none",
+		competingKeys: [],
+	};
+}
+
 export function applyLocalModelSettings(
 	models: OmlxModel[],
 	apiRoot: string,
@@ -514,12 +757,9 @@ export function applyLocalModelSettings(
 	});
 	if (!path || !existsSync(path)) return models;
 
-	let settings: Record<string, unknown>;
+	let settings: unknown;
 	try {
-		settings = JSON.parse(readFileSync(path, "utf8")) as Record<
-			string,
-			unknown
-		>;
+		settings = JSON.parse(readFileSync(path, "utf8"));
 	} catch {
 		onDebug?.({
 			kind: "catalog_local_settings_read_failed",
@@ -528,8 +768,8 @@ export function applyLocalModelSettings(
 		return models;
 	}
 
-	const byModel = settings.models;
-	if (!byModel || typeof byModel !== "object" || Array.isArray(byModel)) {
+	const byModel = asRecord(asRecord(settings)?.models);
+	if (!byModel) {
 		onDebug?.({
 			kind: "catalog_local_settings_invalid",
 			details: { path, reason: "models object missing" },
@@ -537,28 +777,36 @@ export function applyLocalModelSettings(
 		return models;
 	}
 
-	return models.map((model) => {
-		const entry = (byModel as Record<string, unknown>)[model.id];
-		if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
-			return model;
-		}
-		const next = applyModelSettingsEntry(
-			model,
-			entry as Record<string, unknown>,
-		);
-		if (JSON.stringify(next) !== JSON.stringify(model)) {
+	const matches: OverlayMatch[] = [];
+	const applied = models.map((model) => {
+		const lookup = findOverlayEntry(byModel, model);
+		matches.push({
+			publishedId: model.id,
+			outcome: lookup.outcome,
+			matchedKey: lookup.matchedKey,
+			competingKeys: lookup.competingKeys,
+		});
+		if (lookup.entry === undefined || lookup.matchedKey === null) return model;
+		// The matched key is the model's directory name, so the applied event's
+		// before/after comparison sees it on both sides and the id never changes.
+		const before: OmlxModel = { ...model, directoryName: lookup.matchedKey };
+		const next = applyModelSettingsEntry(before, lookup.entry);
+		if (JSON.stringify(next) !== JSON.stringify(before)) {
 			onDebug?.({
 				kind: "catalog_local_model_settings_applied",
 				details: {
 					path,
 					modelId: model.id,
-					before: model,
+					before,
 					after: next,
 				},
 			});
 		}
 		return next;
 	});
+
+	onDebug?.({ kind: "catalog_overlay_matches", details: { entries: matches } });
+	return applied;
 }
 
 function applyModelSettingsEntry(

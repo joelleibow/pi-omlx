@@ -2,17 +2,102 @@ import { strict as assert } from "node:assert";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { inject, test } from "vitest";
+import type { CatalogDebugEvent, OmlxModel } from "../src/catalog.ts";
 import {
 	applyLocalModelSettings,
 	fetchModels,
 	parseModelsResponse,
 	parseModelsStatusResponse,
+	registrableModels,
 	resolveArchContextLimits,
 	toProviderModel,
 } from "../src/catalog.ts";
 
 // The URL the mapper writes onto every model it produces.
 const BASE_URL = "http://127.0.0.1:9400/v1";
+
+// The limits a status entry carries in the fixtures below.
+const L = { max_context_window: 1000, max_tokens: 100 };
+
+// The global defaults every fixture that reaches the defaults step stubs.
+const GLOBAL_DEFAULTS = { max_context_window: 32768, max_tokens: 4096 };
+
+interface FetchResult {
+	models: OmlxModel[];
+	events: CatalogDebugEvent[];
+	calls: string[];
+}
+
+// A path under the isolation root that must not exist: the preamble's explicit
+// absent `modelSettingsPath`, so no fixture reads the shared default overlay.
+function absentSettingsPath(): string {
+	return join(inject("isolationRoot"), "pi-omlx-absent-model-settings.json");
+}
+
+// Writes an overlay to a directory of its own and returns its path.
+function writeOverlay(overlay: unknown): string {
+	const dir = mkdtempSync(join(inject("isolationRoot"), "pi-omlx-"));
+	const path = join(dir, "model_settings.json");
+	writeFileSync(path, JSON.stringify(overlay));
+	return path;
+}
+
+// Runs one fetch against a stubbed server answering the three endpoints a fetch
+// can reach, and records every URL it asked for. A missing endpoint body is a
+// 404, which is how the fixtures reach the `/models` fallback.
+async function fetchCatalog(
+	server: { status?: unknown; models?: unknown; globalDefaults?: unknown },
+	options: { modelSettingsPath?: string } = {},
+): Promise<FetchResult> {
+	const originalFetch = globalThis.fetch;
+	const calls: string[] = [];
+	const events: CatalogDebugEvent[] = [];
+	const answer = (body: unknown) =>
+		body === undefined
+			? new Response("not found", { status: 404 })
+			: new Response(JSON.stringify(body), { status: 200 });
+	globalThis.fetch = (async (url: string | URL | Request) => {
+		const target = String(url);
+		calls.push(target);
+		if (target.endsWith("/models/status")) return answer(server.status);
+		if (target.endsWith("/models")) return answer(server.models);
+		if (target.endsWith("/admin/api/global-settings"))
+			return answer(server.globalDefaults ?? { sampling: GLOBAL_DEFAULTS });
+		throw new Error(`unexpected request to ${target}`);
+	}) as typeof fetch;
+	try {
+		const models = await fetchModels(BASE_URL, "k", {
+			modelSettingsPath: options.modelSettingsPath ?? absentSettingsPath(),
+			onDebug: (event) => events.push(event),
+		});
+		return { models, events, calls };
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
+}
+
+// The details of the one event of a kind, or a failure naming what is missing.
+function detailsOf(
+	events: CatalogDebugEvent[],
+	kind: string,
+): Record<string, unknown> {
+	const event = events.find((candidate) => candidate.kind === kind);
+	assert.ok(
+		event,
+		`no ${kind} event among ${events.map((one) => one.kind).join(", ")}`,
+	);
+	return event.details;
+}
+
+function identityOf(events: CatalogDebugEvent[]): Record<string, unknown> {
+	return detailsOf(events, "catalog_model_identity");
+}
+
+function identityEntries(
+	events: CatalogDebugEvent[],
+): Array<Record<string, unknown>> {
+	return identityOf(events).entries as Array<Record<string, unknown>>;
+}
 
 test("resolveArchContextLimits uses arch ceiling as prio-3 fallback", () => {
 	const [m] = resolveArchContextLimits([{ id: "x", archContextWindow: 72099 }]);
@@ -81,12 +166,16 @@ test("parseModelsResponse captures max_model_len as archContextWindow", () => {
 	]);
 });
 
-test("parseModelsResponse dedupes", () => {
+test("parseModelsResponse returns duplicate ids for the identity step to collapse", () => {
 	const json = {
 		object: "list",
 		data: [{ id: "a" }, { id: "a" }, { id: "b" }],
 	};
-	assert.deepEqual(parseModelsResponse(json), [{ id: "a" }, { id: "b" }]);
+	assert.deepEqual(parseModelsResponse(json), [
+		{ id: "a" },
+		{ id: "a" },
+		{ id: "b" },
+	]);
 });
 
 test("parseModelsResponse throws on missing data array", () => {
@@ -138,6 +227,32 @@ test("parseModelsStatusResponse omits missing numeric fields", () => {
 	]);
 });
 
+test("parseModelsStatusResponse captures model_alias as modelAlias and omits unset values", () => {
+	const json = {
+		models: [
+			{ id: "qwen", model_alias: "qwen" },
+			{ id: "absent" },
+			{ id: "null", model_alias: null },
+			{ id: "number", model_alias: 5 },
+			{ id: "empty", model_alias: "" },
+			{ id: "blank", model_alias: "  " },
+			{ id: "padded", model_alias: " qwen " },
+			{},
+			{ id: "" },
+			{ id: 5 },
+		],
+	};
+	assert.deepEqual(parseModelsStatusResponse(json), [
+		{ id: "qwen", modelAlias: "qwen" },
+		{ id: "absent" },
+		{ id: "null" },
+		{ id: "number" },
+		{ id: "empty" },
+		{ id: "blank", modelAlias: "  " },
+		{ id: "padded", modelAlias: " qwen " },
+	]);
+});
+
 test("parseModelsStatusResponse throws on missing models array", () => {
 	assert.throws(() => parseModelsStatusResponse({}), /models/);
 });
@@ -169,6 +284,7 @@ test("fetchModels prefers /models/status", async () => {
 		assert.deepEqual(models, [
 			{
 				id: "x",
+				directoryName: "x",
 				contextWindow: 256000,
 				maxTokens: 32768,
 				thinkingDefault: false,
@@ -343,8 +459,10 @@ test("fetchModels emits catalog debug events for local settings refinement", asy
 		});
 		assert.deepEqual(events, [
 			"catalog_status_loaded",
+			"catalog_model_identity",
 			"catalog_local_settings_considered",
 			"catalog_local_model_settings_applied",
+			"catalog_overlay_matches",
 		]);
 	} finally {
 		globalThis.fetch = originalFetch;
@@ -524,4 +642,1027 @@ test("toProviderModel maps displayName to Pi name and keeps OMLX-only settings o
 	assert.equal("archContextWindow" in model, false);
 	assert.equal("reasoningParser" in model, false);
 	assert.equal("thinkingDefault" in model, false);
+});
+
+// The published id on /models/status: the server's alias when it is unique, and
+// the endpoint id otherwise. Every case here reads the identity event, because
+// that is where the decision is auditable.
+
+test("fetchModels collapses exact duplicate /models ids and names the discarded id", async () => {
+	const { models, events } = await fetchCatalog({
+		models: { object: "list", data: [{ id: "a" }, { id: "a" }, { id: "b" }] },
+	});
+
+	assert.deepEqual(
+		models.map((model) => model.id),
+		["a", "b"],
+	);
+	assert.deepEqual(identityOf(events).discardedDuplicates, ["a"]);
+	assert.equal(detailsOf(events, "catalog_models_loaded").count, 3);
+});
+
+test("fetchModels collapses exact duplicate /models/status ids and names the discarded id", async () => {
+	const { models, events } = await fetchCatalog({
+		status: {
+			models: [
+				{ id: "a", ...L },
+				{ id: "a", ...L },
+				{ id: "b", ...L },
+			],
+		},
+	});
+
+	assert.deepEqual(
+		models.map((model) => model.id),
+		["a", "b"],
+	);
+	const identity = identityOf(events);
+	assert.equal(identity.endpoint, "status");
+	assert.deepEqual(
+		identityEntries(events).map((entry) => entry.endpointId),
+		["a", "b"],
+	);
+	assert.deepEqual(identity.discardedDuplicates, ["a"]);
+	assert.equal(detailsOf(events, "catalog_status_loaded").count, 3);
+});
+
+test("fetchModels emits an empty identity event for an empty /models/status list", async () => {
+	const { models, events } = await fetchCatalog({ status: { models: [] } });
+
+	assert.deepEqual(models, []);
+	assert.deepEqual(identityOf(events), {
+		endpoint: "status",
+		entries: [],
+		discardedDuplicates: [],
+		caseOnlyPairs: [],
+	});
+});
+
+test("fetchModels publishes a unique status alias as the model id", async () => {
+	const { models } = await fetchCatalog({
+		status: {
+			models: [
+				{ id: "Qwen3-dir", model_alias: "qwen", ...L },
+				{ id: "plain", ...L },
+			],
+		},
+	});
+
+	assert.deepEqual(
+		models.map((model) => model.id),
+		["qwen", "plain"],
+	);
+});
+
+test("fetchModels publishes the endpoint id when model_alias is absent, null, non-string or empty", async () => {
+	const { models, events } = await fetchCatalog({
+		status: {
+			models: [
+				{ id: "a", ...L },
+				{ id: "b", model_alias: null, ...L },
+				{ id: "c", model_alias: 5, ...L },
+				{ id: "d", model_alias: "", ...L },
+			],
+		},
+	});
+
+	assert.deepEqual(
+		models.map((model) => model.id),
+		["a", "b", "c", "d"],
+	);
+	const entries = identityEntries(events);
+	assert.deepEqual(
+		entries.map((entry) => entry.alias),
+		[null, null, null, null],
+	);
+	assert.deepEqual(
+		entries.map((entry) => entry.publishedId),
+		["a", "b", "c", "d"],
+	);
+});
+
+test("fetchModels publishes a whitespace-only alias verbatim", async () => {
+	const { models } = await fetchCatalog({
+		status: { models: [{ id: "w-dir", model_alias: "  ", ...L }] },
+	});
+
+	assert.deepEqual(
+		models.map((model) => model.id),
+		["  "],
+	);
+});
+
+test("fetchModels publishes a padded alias verbatim", async () => {
+	const { models, events } = await fetchCatalog({
+		status: { models: [{ id: "p-dir", model_alias: " qwen ", ...L }] },
+	});
+
+	assert.deepEqual(
+		models.map((model) => model.id),
+		[" qwen "],
+	);
+	const [entry] = identityEntries(events);
+	assert.equal(entry?.alias, " qwen ");
+	assert.equal(entry?.publishedId, " qwen ");
+});
+
+test("fetchModels computes caseOnlyPairs with toLowerCase for ids that differ only by case", async () => {
+	const { models, events } = await fetchCatalog({
+		status: {
+			models: [
+				{ id: "Foo", ...L },
+				{ id: "foo", ...L },
+				{ id: "FOO", ...L },
+			],
+		},
+	});
+
+	assert.deepEqual(
+		models.map((model) => model.id),
+		["Foo", "foo", "FOO"],
+	);
+	const identity = identityOf(events);
+	assert.deepEqual(identity.caseOnlyPairs, [
+		{ a: "Foo", b: "foo" },
+		{ a: "Foo", b: "FOO" },
+		{ a: "foo", b: "FOO" },
+	]);
+	assert.deepEqual(identity.discardedDuplicates, []);
+});
+
+test("fetchModels declines an alias two entries share, and publishes both endpoint ids", async () => {
+	const { models, events } = await fetchCatalog({
+		status: {
+			models: [
+				{ id: "A", model_alias: "foo" },
+				{ id: "B", model_alias: "FOO" },
+			],
+		},
+	});
+
+	assert.deepEqual(
+		models.map((model) => model.id),
+		["A", "B"],
+	);
+	assert.deepEqual(
+		identityEntries(events).map((entry) => entry.declined),
+		["duplicate_alias", "duplicate_alias"],
+	);
+});
+
+test("fetchModels declines an alias equal to another entry's endpoint id", async () => {
+	const { models, events } = await fetchCatalog({
+		status: {
+			models: [
+				{ id: "foo", ...L },
+				{ id: "A", model_alias: "foo", ...L },
+			],
+		},
+	});
+
+	assert.deepEqual(
+		models.map((model) => model.id),
+		["foo", "A"],
+	);
+	assert.deepEqual(
+		identityEntries(events).map((entry) => entry.declined),
+		[null, "alias_matches_model_id"],
+	);
+});
+
+test("fetchModels declines an alias that differs only by case from another entry's endpoint id", async () => {
+	const { models, events } = await fetchCatalog({
+		status: {
+			models: [
+				{ id: "foo", ...L },
+				{ id: "A", model_alias: "FOO", ...L },
+			],
+		},
+	});
+
+	assert.deepEqual(
+		models.map((model) => model.id),
+		["foo", "A"],
+	);
+	assert.deepEqual(
+		identityEntries(events).map((entry) => entry.declined),
+		[null, "alias_matches_model_id"],
+	);
+});
+
+test("fetchModels declines an alias equal to an exposed-profile id", async () => {
+	const { models, events } = await fetchCatalog({
+		status: {
+			models: [
+				{ id: "qwen:fast", source_model_id: "Qwen3-dir", ...L },
+				{ id: "A", model_alias: "qwen:fast", ...L },
+			],
+		},
+	});
+
+	assert.deepEqual(
+		models.map((model) => model.id),
+		["qwen:fast", "A"],
+	);
+	assert.deepEqual(
+		identityEntries(events).map((entry) => entry.declined),
+		[null, "alias_matches_model_id"],
+	);
+});
+
+test("fetchModels reports alias_matches_model_id when an alias equals another entry's id and another entry's alias", async () => {
+	const { models, events } = await fetchCatalog({
+		status: {
+			models: [
+				{ id: "A", model_alias: "foo" },
+				{ id: "B", model_alias: "foo" },
+				{ id: "foo" },
+			],
+		},
+	});
+
+	assert.deepEqual(
+		models.map((model) => model.id),
+		["A", "B", "foo"],
+	);
+	assert.deepEqual(
+		identityEntries(events).map((entry) => entry.declined),
+		["alias_matches_model_id", "alias_matches_model_id", null],
+	);
+});
+
+test("fetchModels accepts an alias that differs only by case from its own endpoint id", async () => {
+	const { models, events } = await fetchCatalog({
+		status: { models: [{ id: "qwen", model_alias: "QWEN" }] },
+	});
+
+	assert.deepEqual(
+		models.map((model) => model.id),
+		["QWEN"],
+	);
+	assert.deepEqual(identityEntries(events), [
+		{
+			endpointId: "qwen",
+			directoryName: "qwen",
+			alias: "QWEN",
+			publishedId: "QWEN",
+			declined: null,
+		},
+	]);
+});
+
+test("fetchModels runs the collision check over hidden, profile and limit-less entries", async () => {
+	const { models, events } = await fetchCatalog({
+		status: {
+			models: [
+				{ id: "A-dir", model_alias: "lane", ...L },
+				{ id: "lane" },
+				{ id: "C-dir", model_alias: "qwen:fast", ...L },
+				{ id: "qwen:fast", source_model_id: "Qwen3-dir", ...L },
+				{ id: "H-dir", model_alias: "h", is_hidden: true, ...L },
+				{ id: "D-dir", model_alias: "h", ...L },
+			],
+		},
+	});
+
+	assert.deepEqual(
+		models.map((model) => model.id),
+		["A-dir", "lane", "C-dir", "qwen:fast", "H-dir", "D-dir"],
+	);
+	assert.deepEqual(
+		identityEntries(events).map((entry) => entry.declined),
+		[
+			"alias_matches_model_id",
+			null,
+			"alias_matches_model_id",
+			null,
+			"duplicate_alias",
+			"duplicate_alias",
+		],
+	);
+});
+
+test("fetchModels publishes a declined model under its endpoint id and succeeds", async () => {
+	const { models } = await fetchCatalog({
+		status: {
+			models: [
+				{ id: "A", model_alias: "foo", ...L },
+				{ id: "foo", ...L },
+			],
+		},
+	});
+
+	assert.deepEqual(
+		registrableModels(models).map((model) => model.id),
+		["A", "foo"],
+	);
+});
+
+test("fetchModels runs the collision check over the collapsed list", async () => {
+	// An exact duplicate of an entry's own endpoint id is not another entry.
+	const own = await fetchCatalog({
+		status: {
+			models: [
+				{ id: "A", model_alias: "x", ...L },
+				{ id: "A", model_alias: "x", ...L },
+			],
+		},
+	});
+	assert.deepEqual(
+		own.models.map((model) => model.id),
+		["x"],
+	);
+	const ownIdentity = identityOf(own.events);
+	assert.deepEqual(ownIdentity.entries, [
+		{
+			endpointId: "A",
+			directoryName: "A",
+			alias: "x",
+			publishedId: "x",
+			declined: null,
+		},
+	]);
+	assert.deepEqual(ownIdentity.discardedDuplicates, ["A"]);
+
+	// The discarded copy's alias collides with nothing, because the check runs
+	// after the collapse.
+	const other = await fetchCatalog({
+		status: {
+			models: [
+				{ id: "A", model_alias: "y", ...L },
+				{ id: "B", model_alias: "x", ...L },
+				{ id: "B", model_alias: "y", ...L },
+			],
+		},
+	});
+	assert.deepEqual(
+		other.models.map((model) => model.id),
+		["y", "x"],
+	);
+	const otherIdentity = identityOf(other.events);
+	assert.deepEqual(otherIdentity.entries, [
+		{
+			endpointId: "A",
+			directoryName: "A",
+			alias: "y",
+			publishedId: "y",
+			declined: null,
+		},
+		{
+			endpointId: "B",
+			directoryName: "B",
+			alias: "x",
+			publishedId: "x",
+			declined: null,
+		},
+	]);
+	assert.deepEqual(otherIdentity.discardedDuplicates, ["B"]);
+});
+
+test("fetchModels records the directory name on the status path", async () => {
+	const { models } = await fetchCatalog({
+		status: {
+			models: [
+				{ id: "Qwen3-dir", model_alias: "qwen", ...L },
+				{ id: "plain", ...L },
+			],
+		},
+	});
+
+	assert.deepEqual(
+		models.map((model) => [model.id, model.directoryName]),
+		[
+			["qwen", "Qwen3-dir"],
+			["plain", "plain"],
+		],
+	);
+});
+
+// The published id on the /models fallback: the endpoint's own id, verbatim,
+// with no decline and no new field.
+
+test("fetchModels publishes the /models id verbatim and records null directory name and alias", async () => {
+	const { models, events } = await fetchCatalog({
+		models: { object: "list", data: [{ id: "qwen" }] },
+	});
+
+	assert.deepEqual(models, [
+		{ id: "qwen", contextWindow: 32768, maxTokens: 4096 },
+	]);
+	const identity = identityOf(events);
+	assert.equal(identity.endpoint, "models");
+	const [entry] = identityEntries(events);
+	assert.deepEqual(entry, {
+		endpointId: "qwen",
+		directoryName: null,
+		alias: null,
+		publishedId: "qwen",
+		declined: null,
+	});
+});
+
+test("fetchModels publishes /models ids that differ only by case and names the pair", async () => {
+	const { models, events } = await fetchCatalog({
+		models: {
+			object: "list",
+			data: [{ id: "qwen" }, { id: "Qwen" }, { id: "qwen" }],
+		},
+	});
+
+	assert.deepEqual(
+		models.map((model) => model.id),
+		["qwen", "Qwen"],
+	);
+	const identity = identityOf(events);
+	assert.deepEqual(identity.discardedDuplicates, ["qwen"]);
+	assert.deepEqual(identity.caseOnlyPairs, [{ a: "qwen", b: "Qwen" }]);
+});
+
+test("fetchModels publishes one id for a model both endpoints list", async () => {
+	const status = await fetchCatalog({
+		status: { models: [{ id: "Qwen3-dir", model_alias: "qwen", ...L }] },
+	});
+	const fallback = await fetchCatalog({
+		models: { object: "list", data: [{ id: "qwen" }] },
+	});
+
+	assert.deepEqual(
+		status.models.map((model) => model.id),
+		["qwen"],
+	);
+	assert.deepEqual(
+		fallback.models.map((model) => model.id),
+		["qwen"],
+	);
+});
+
+// The overlay, matched through the directory name on both paths.
+
+test("applyLocalModelSettings matches a status model by its directory name, not its published id", () => {
+	const settingsPath = writeOverlay({
+		models: {
+			"Qwen3-dir": { max_context_window: 1024, max_tokens: 256 },
+			qwen: { max_context_window: 4096, max_tokens: 512 },
+		},
+	});
+
+	const models = applyLocalModelSettings(
+		[{ id: "qwen", directoryName: "Qwen3-dir" }],
+		"http://example.com/v1",
+		settingsPath,
+	);
+
+	assert.equal(models[0]?.contextWindow, 1024);
+	assert.equal(models[0]?.maxTokens, 256);
+});
+
+test("applyLocalModelSettings gives a status model whose directory key is missing no fields", () => {
+	const settingsPath = writeOverlay({
+		models: {
+			qwen: { max_context_window: 4096, max_tokens: 512 },
+			"Qwen3-dir": {
+				model_alias: "qwen",
+				max_context_window: 2048,
+				max_tokens: 128,
+			},
+		},
+	});
+
+	const models = applyLocalModelSettings(
+		[{ id: "qwen", directoryName: "missing-dir" }],
+		"http://example.com/v1",
+		settingsPath,
+	);
+
+	assert.deepEqual(models, [{ id: "qwen", directoryName: "missing-dir" }]);
+});
+
+test("fetchModels emits catalog_overlay_matches only when an overlay models object was read", async () => {
+	const miss = await fetchCatalog(
+		{ status: { models: [{ id: "Qwen3-dir", model_alias: "qwen", ...L }] } },
+		{
+			modelSettingsPath: writeOverlay({
+				models: { "other-dir": { max_tokens: 1 } },
+			}),
+		},
+	);
+	assert.deepEqual(detailsOf(miss.events, "catalog_overlay_matches"), {
+		entries: [
+			{
+				publishedId: "qwen",
+				outcome: "none",
+				matchedKey: null,
+				competingKeys: [],
+			},
+		],
+	});
+	assert.equal(identityEntries(miss.events)[0]?.directoryName, "Qwen3-dir");
+
+	const exact = await fetchCatalog(
+		{ models: { object: "list", data: [{ id: "y" }] } },
+		{
+			modelSettingsPath: writeOverlay({
+				models: { y: { max_context_window: 2048, max_tokens: 128 } },
+			}),
+		},
+	);
+	assert.deepEqual(detailsOf(exact.events, "catalog_overlay_matches"), {
+		entries: [
+			{
+				publishedId: "y",
+				outcome: "directory_key",
+				matchedKey: "y",
+				competingKeys: [],
+			},
+		],
+	});
+
+	const absent = await fetchCatalog({
+		models: { object: "list", data: [{ id: "y" }] },
+	});
+	assert.equal(
+		absent.events.some((event) => event.kind === "catalog_overlay_matches"),
+		false,
+	);
+
+	const noModels = await fetchCatalog(
+		{ models: { object: "list", data: [{ id: "y" }] } },
+		{ modelSettingsPath: writeOverlay({ version: 1 }) },
+	);
+	assert.equal(
+		noModels.events.some((event) => event.kind === "catalog_overlay_matches"),
+		false,
+	);
+	assert.equal(
+		detailsOf(noModels.events, "catalog_local_settings_invalid").reason,
+		"models object missing",
+	);
+});
+
+test("fetchModels recovers an aliased fallback model's overlay limits through one alias match", async () => {
+	const recovered = await fetchCatalog(
+		{ models: { object: "list", data: [{ id: "qwen" }] } },
+		{
+			modelSettingsPath: writeOverlay({
+				models: {
+					"Qwen3-dir": {
+						model_alias: "qwen",
+						max_context_window: 131072,
+						max_tokens: 8192,
+					},
+				},
+			}),
+		},
+	);
+	assert.equal(recovered.models[0]?.contextWindow, 131072);
+	assert.equal(recovered.models[0]?.maxTokens, 8192);
+	assert.equal(recovered.models[0]?.id, "qwen");
+
+	const exact = await fetchCatalog(
+		{ models: { object: "list", data: [{ id: "qwen" }] } },
+		{
+			modelSettingsPath: writeOverlay({
+				models: {
+					qwen: { max_context_window: 4096, max_tokens: 512 },
+					"Qwen3-dir": {
+						model_alias: "qwen",
+						max_context_window: 131072,
+						max_tokens: 8192,
+					},
+				},
+			}),
+		},
+	);
+	assert.deepEqual(exact.models, [
+		{ id: "qwen", directoryName: "qwen", contextWindow: 4096, maxTokens: 512 },
+	]);
+	assert.deepEqual(detailsOf(exact.events, "catalog_overlay_matches"), {
+		entries: [
+			{
+				publishedId: "qwen",
+				outcome: "directory_key",
+				matchedKey: "qwen",
+				competingKeys: [],
+			},
+		],
+	});
+});
+
+test("fetchModels falls through a non-object exact overlay key to an alias match", async () => {
+	for (const value of [null, [], "x", 5]) {
+		const result = await fetchCatalog(
+			{ models: { object: "list", data: [{ id: "qwen" }] } },
+			{
+				modelSettingsPath: writeOverlay({
+					models: {
+						qwen: value,
+						"Qwen3-dir": {
+							model_alias: "qwen",
+							max_context_window: 131072,
+							max_tokens: 8192,
+						},
+					},
+				}),
+			},
+		);
+		const label = `exact key ${JSON.stringify(value)}`;
+		assert.equal(result.models[0]?.contextWindow, 131072, label);
+		assert.equal(result.models[0]?.maxTokens, 8192, label);
+		if (value === null) {
+			assert.deepEqual(detailsOf(result.events, "catalog_overlay_matches"), {
+				entries: [
+					{
+						publishedId: "qwen",
+						outcome: "alias_key",
+						matchedKey: "Qwen3-dir",
+						competingKeys: [],
+					},
+				],
+			});
+		}
+	}
+});
+
+test("fetchModels skips a null overlay entry during the alias scan", async () => {
+	const result = await fetchCatalog(
+		{ models: { object: "list", data: [{ id: "qwen" }] } },
+		{
+			modelSettingsPath: writeOverlay({
+				models: {
+					other: null,
+					"Qwen3-dir": {
+						model_alias: "qwen",
+						max_context_window: 131072,
+						max_tokens: 8192,
+					},
+				},
+			}),
+		},
+	);
+
+	assert.equal(result.models[0]?.contextWindow, 131072);
+	assert.deepEqual(detailsOf(result.events, "catalog_overlay_matches"), {
+		entries: [
+			{
+				publishedId: "qwen",
+				outcome: "alias_key",
+				matchedKey: "Qwen3-dir",
+				competingKeys: [],
+			},
+		],
+	});
+});
+
+test("fetchModels applies a stale overlay entry reached through another model's alias and names its key", async () => {
+	const result = await fetchCatalog(
+		{ models: { object: "list", data: [{ id: "qwen" }] } },
+		{
+			modelSettingsPath: writeOverlay({
+				models: {
+					"A-dir": {
+						model_alias: "qwen",
+						max_context_window: 4096,
+						max_tokens: 512,
+					},
+				},
+			}),
+		},
+	);
+
+	assert.equal(result.models[0]?.id, "qwen");
+	assert.equal(result.models[0]?.contextWindow, 4096);
+	assert.equal(result.models[0]?.maxTokens, 512);
+	assert.deepEqual(detailsOf(result.events, "catalog_overlay_matches"), {
+		entries: [
+			{
+				publishedId: "qwen",
+				outcome: "alias_key",
+				matchedKey: "A-dir",
+				competingKeys: [],
+			},
+		],
+	});
+});
+
+test("fetchModels never takes the published id from the overlay's model_alias", async () => {
+	const settingsPath = writeOverlay({
+		models: {
+			dir: { model_alias: "nick", max_context_window: 2048, max_tokens: 128 },
+		},
+	});
+	const status = await fetchCatalog(
+		{ status: { models: [{ id: "dir", ...L }] } },
+		{ modelSettingsPath: settingsPath },
+	);
+	const fallback = await fetchCatalog(
+		{ models: { object: "list", data: [{ id: "dir" }] } },
+		{ modelSettingsPath: settingsPath },
+	);
+
+	assert.equal(status.models[0]?.id, "dir");
+	assert.equal(status.models[0]?.contextWindow, 2048);
+	assert.equal(fallback.models[0]?.id, "dir");
+	assert.equal(fallback.models[0]?.contextWindow, 2048);
+});
+
+test("fetchModels applies no overlay fields when two entries share the matching alias", async () => {
+	const two = await fetchCatalog(
+		{ models: { object: "list", data: [{ id: "qwen" }] } },
+		{
+			modelSettingsPath: writeOverlay({
+				models: {
+					"B-dir": {
+						model_alias: "qwen",
+						max_context_window: 4096,
+						max_tokens: 512,
+					},
+					"A-dir": {
+						model_alias: "qwen",
+						max_context_window: 2048,
+						max_tokens: 128,
+					},
+				},
+			}),
+		},
+	);
+	assert.equal(two.models[0]?.contextWindow, 32768);
+	assert.equal(two.models[0]?.maxTokens, 4096);
+	assert.deepEqual(detailsOf(two.events, "catalog_overlay_matches"), {
+		entries: [
+			{
+				publishedId: "qwen",
+				outcome: "ambiguous",
+				matchedKey: null,
+				competingKeys: ["B-dir", "A-dir"],
+			},
+		],
+	});
+
+	const three = await fetchCatalog(
+		{ models: { object: "list", data: [{ id: "qwen" }] } },
+		{
+			modelSettingsPath: writeOverlay({
+				models: {
+					"C-dir": {
+						model_alias: "qwen",
+						max_context_window: 8192,
+						max_tokens: 1024,
+					},
+					"B-dir": {
+						model_alias: "qwen",
+						max_context_window: 4096,
+						max_tokens: 512,
+					},
+					"A-dir": {
+						model_alias: "qwen",
+						max_context_window: 2048,
+						max_tokens: 128,
+					},
+				},
+			}),
+		},
+	);
+	assert.equal(three.models[0]?.contextWindow, 32768);
+	assert.equal(three.models[0]?.maxTokens, 4096);
+	assert.deepEqual(detailsOf(three.events, "catalog_overlay_matches"), {
+		entries: [
+			{
+				publishedId: "qwen",
+				outcome: "ambiguous",
+				matchedKey: null,
+				competingKeys: ["C-dir", "B-dir", "A-dir"],
+			},
+		],
+	});
+});
+
+test("fetchModels falls back to global defaults when no overlay entry matches", async () => {
+	const stale = await fetchCatalog(
+		{ models: { object: "list", data: [{ id: "qwen" }] } },
+		{
+			modelSettingsPath: writeOverlay({
+				models: {
+					"A-dir": {
+						model_alias: "old",
+						max_context_window: 131072,
+						max_tokens: 8192,
+					},
+				},
+			}),
+		},
+	);
+	assert.deepEqual(stale.models, [
+		{ id: "qwen", contextWindow: 32768, maxTokens: 4096 },
+	]);
+	assert.deepEqual(detailsOf(stale.events, "catalog_overlay_matches"), {
+		entries: [
+			{
+				publishedId: "qwen",
+				outcome: "none",
+				matchedKey: null,
+				competingKeys: [],
+			},
+		],
+	});
+
+	const absent = await fetchCatalog({
+		models: { object: "list", data: [{ id: "qwen" }] },
+	});
+	assert.deepEqual(absent.models, [
+		{ id: "qwen", contextWindow: 32768, maxTokens: 4096 },
+	]);
+	assert.equal(
+		absent.events.some((event) => event.kind === "catalog_overlay_matches"),
+		false,
+	);
+
+	const caseOnly = await fetchCatalog(
+		{ models: { object: "list", data: [{ id: "qwen" }] } },
+		{
+			modelSettingsPath: writeOverlay({
+				models: {
+					"Qwen3-dir": {
+						model_alias: "QWEN",
+						max_context_window: 131072,
+						max_tokens: 8192,
+					},
+				},
+			}),
+		},
+	);
+	assert.deepEqual(caseOnly.models, [
+		{ id: "qwen", contextWindow: 32768, maxTokens: 4096 },
+	]);
+	assert.deepEqual(detailsOf(caseOnly.events, "catalog_overlay_matches"), {
+		entries: [
+			{
+				publishedId: "qwen",
+				outcome: "none",
+				matchedKey: null,
+				competingKeys: [],
+			},
+		],
+	});
+});
+
+test("fetchModels ignores an overlay file that parses to null", async () => {
+	const result = await fetchCatalog(
+		{ status: { models: [{ id: "m", ...L }] } },
+		{ modelSettingsPath: writeOverlay(null) },
+	);
+
+	assert.deepEqual(
+		result.models.map((model) => model.id),
+		["m"],
+	);
+	assert.deepEqual(result.calls, [`${BASE_URL}/models/status`]);
+	assert.deepEqual(
+		result.events.map((event) => event.kind),
+		[
+			"catalog_status_loaded",
+			"catalog_model_identity",
+			"catalog_local_settings_considered",
+			"catalog_local_settings_invalid",
+		],
+	);
+});
+
+// The display label: the server's or the overlay's display name, else the
+// directory name, else the published id.
+
+test("toProviderModel labels an aliased model by its folder name when no display name is set", async () => {
+	const result = await fetchCatalog({
+		status: { models: [{ id: "Qwen3-dir", model_alias: "qwen", ...L }] },
+	});
+	const [model] = result.models;
+	assert.ok(model);
+
+	const providerModel = toProviderModel(model, BASE_URL);
+	assert.equal(providerModel.id, "qwen");
+	assert.equal(providerModel.name, "Qwen3-dir");
+});
+
+test("toProviderModel prefers a display name over the folder name", async () => {
+	const server = await fetchCatalog({
+		status: {
+			models: [
+				{
+					id: "Qwen3-dir",
+					model_alias: "qwen",
+					display_name: "Server Name",
+					...L,
+				},
+			],
+		},
+	});
+	const [serverModel] = server.models;
+	assert.ok(serverModel);
+	assert.equal(toProviderModel(serverModel, BASE_URL).name, "Server Name");
+
+	const overlay = await fetchCatalog(
+		{
+			status: {
+				models: [
+					{
+						id: "Qwen3-dir",
+						model_alias: "qwen",
+						display_name: "Server Name",
+						...L,
+					},
+				],
+			},
+		},
+		{
+			modelSettingsPath: writeOverlay({
+				models: { "Qwen3-dir": { display_name: "Overlay Name" } },
+			}),
+		},
+	);
+	const [overlayModel] = overlay.models;
+	assert.ok(overlayModel);
+	assert.equal(toProviderModel(overlayModel, BASE_URL).name, "Overlay Name");
+});
+
+test("toProviderModel labels a fallback alias match by the overlay key, and by the published id with no match", async () => {
+	const matched = await fetchCatalog(
+		{ models: { object: "list", data: [{ id: "qwen" }] } },
+		{
+			modelSettingsPath: writeOverlay({
+				models: {
+					"Qwen3-dir": {
+						model_alias: "qwen",
+						max_context_window: 131072,
+						max_tokens: 8192,
+					},
+				},
+			}),
+		},
+	);
+	const [matchedModel] = matched.models;
+	assert.ok(matchedModel);
+	assert.equal(toProviderModel(matchedModel, BASE_URL).name, "Qwen3-dir");
+
+	const unmatched = await fetchCatalog({
+		models: { object: "list", data: [{ id: "qwen" }] },
+	});
+	const [unmatchedModel] = unmatched.models;
+	assert.ok(unmatchedModel);
+	assert.equal(toProviderModel(unmatchedModel, BASE_URL).name, "qwen");
+
+	const shared = await fetchCatalog(
+		{ models: { object: "list", data: [{ id: "qwen" }] } },
+		{
+			modelSettingsPath: writeOverlay({
+				models: {
+					"B-dir": { model_alias: "qwen" },
+					"A-dir": { model_alias: "qwen" },
+				},
+			}),
+		},
+	);
+	const [sharedModel] = shared.models;
+	assert.ok(sharedModel);
+	assert.equal(toProviderModel(sharedModel, BASE_URL).name, "qwen");
+});
+
+test("the applied-settings event carries the directory name beside the published id", async () => {
+	const fallback = await fetchCatalog(
+		{ models: { object: "list", data: [{ id: "qwen" }] } },
+		{
+			modelSettingsPath: writeOverlay({
+				models: {
+					"Qwen3-dir": {
+						model_alias: "qwen",
+						max_context_window: 131072,
+						max_tokens: 8192,
+					},
+				},
+			}),
+		},
+	);
+	const fallbackEvent = detailsOf(
+		fallback.events,
+		"catalog_local_model_settings_applied",
+	);
+	assert.equal(fallbackEvent.modelId, "qwen");
+	const fallbackBefore = fallbackEvent.before as Record<string, unknown>;
+	assert.equal(fallbackBefore.id, "qwen");
+	assert.equal(fallbackBefore.directoryName, "Qwen3-dir");
+
+	const status = await fetchCatalog(
+		{ status: { models: [{ id: "Qwen3-dir", model_alias: "qwen", ...L }] } },
+		{
+			modelSettingsPath: writeOverlay({
+				models: { "Qwen3-dir": { max_tokens: 50 } },
+			}),
+		},
+	);
+	const statusEvent = detailsOf(
+		status.events,
+		"catalog_local_model_settings_applied",
+	);
+	assert.equal(statusEvent.modelId, "qwen");
+	const statusBefore = statusEvent.before as Record<string, unknown>;
+	assert.equal(statusBefore.id, "qwen");
+	assert.equal(statusBefore.directoryName, "Qwen3-dir");
 });

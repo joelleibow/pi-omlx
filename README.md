@@ -11,7 +11,7 @@ Switch between your local and remote models effortlessly using Pi's built-in `/m
 
 * Auto discovery: Pi fetches your OMLX models at a session's start, after a login and when `/model` opens, never on a timer, and a session's start never waits on the network. A first start with no stored catalog warns once that the session landed on another provider's model.
 * Native integration: login uses Pi's standard `/login`, and models use Pi's standard `/model` menu.
-* Smart overrides: applies per-request thinking controls based on each model's `thinkingDefault` metadata.
+* Smart overrides: applies per-request thinking controls based on each model's `thinkingDefault` metadata, and keeps applying the `off` controls to a session left on a model a refresh renamed.
 
 ## 📦 Installation
 
@@ -37,6 +37,14 @@ pi install git:github.com/joelleibow/pi-omlx
 The default base URL is `http://127.0.0.1:8000/v1`. A saved login decides the base URL and the API key. `OMLX_BASE_URL` and `OMLX_API_KEY` apply only when nothing is saved, and the URL variable does nothing without the key beside it. A keyless server is reached the way step 3 describes, by leaving the key empty. oMLX has to accept any bearer for that to work, which holds in two states: a loopback bind with no main API key at all, or a main key plus `skip_api_key_verification` on a loopback bind. Setting `OMLX_BASE_URL` alone is unsupported.
 
 Upgrading from an earlier version? A saved OAuth-style login is no longer read. Run `/logout` and choose **OMLX** in the list it opens, then run `/login omlx` once, and the new login overwrites the old entry.
+
+### Model names and aliases
+
+When OMLX gives a model an alias that no other model on the server claims as its folder name or alias, the alias becomes the model's id in Pi, so `/model <alias>` and a saved default of the alias both reach it. Wherever OMLX sets no display name, the folder name stays the label in the picker, so the model stays findable by the name its folder carries. A server that cannot answer `/models/status` labels an aliased model by its alias instead, unless an entry in the metadata overlay names that alias in its `model_alias`, which gives back the folder name.
+
+After the first refresh that publishes the alias, a saved default written as the folder name no longer resolves. Every start misses it and opens, without a warning, on the model Pi falls back to: another provider's default, or the first available model, which can be a different OMLX model, so save the alias as the default once: highlight the alias row in `/model` and press `Ctrl+S`, or set `defaultModel` in Pi's `settings.json`. `/model <alias>` and pressing Enter in the picker switch only the current session. A `models.json` override or a glob `enabledModels` entry keyed by the folder name misses the same way.
+
+If another configured provider serves a model with the same id, a bare `/model <alias>` is ambiguous and Pi opens the picker filtered to both rows. Use the provider-scoped form, `/model omlx/<alias>`, which resolves to the OMLX model.
 
 
 ## ⚙️ Configuration

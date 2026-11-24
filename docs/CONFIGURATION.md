@@ -26,6 +26,8 @@ A failed refresh shows up in `/model` and in the message after a login. A refres
 
 The extension's own cache, `~/.pi/agent/cache/omlx-models.json`, is no longer read or written. Nothing deletes it; remove it yourself if you want the space back.
 
+A saved default written as a model's folder name stops resolving once the server publishes an alias for that model: Pi's `defaultModel` matches the id, the id is now the alias, and each start lands, without a warning, on the model Pi falls back to: another provider's default, or the first available model, which can be a different OMLX model. Save the alias as the default once — highlight it in `/model` and press `Ctrl+S`, or edit `defaultModel` in Pi's `settings.json`. Typing `/model <alias>` or pressing Enter switches only the current session. A `models.json` `modelOverrides` key or a glob `enabledModels` entry written as the folder name misses the same way.
+
 The extension shows at most one warning at a session's start, and never two:
 
 - `oMLX still holds an old OAuth-style login that pi no longer reads; run /logout, choose OMLX, then run /login omlx.`
@@ -54,7 +56,7 @@ Reach a server that needs no API key with `/login`: enter its base URL and leave
 
 A keyless login expects oMLX to accept any bearer, which happens in two states: a loopback bind with no main API key configured at all, or a main key configured with `skip_api_key_verification` on, on a loopback bind. oMLX answers before it reads the header in either state, so the placeholder is ignored.
 
-A server that sets only `allow_unauthenticated_inference` still requires its main key on `/v1/models/status`, so the login falls back to `/v1/models`, which reports no limits. The login then fails with `OMLX at <base URL> returned <n> models, none with max_context_window and max_tokens.` The message names the server URL and the model count. That failure happens unless the `~/.omlx` overlay supplies both `max_context_window` and `max_tokens` for at least one model; supplying one of the two is not enough.
+A server that sets only `allow_unauthenticated_inference` still requires its main key on `/v1/models/status`, so the login falls back to `/v1/models`, which reports no limits. The login then fails with `OMLX at <base URL> returned <n> models, none with max_context_window and max_tokens.` The message names the server URL and the model count. That failure happens unless the `~/.omlx` overlay supplies both `max_context_window` and `max_tokens` for at least one model; supplying one of the two is not enough. On that path the overlay entry is found by the id `/models` reported, which is the alias for an aliased model, or by an entry whose `model_alias` is that id; a key equal to the folder name alone does not match (see [How an entry finds its model](#how-an-entry-finds-its-model)).
 
 A keyless server addressed by `OMLX_BASE_URL` alone, with no login, is unsupported. Pi has nothing stored to authenticate with, treats the provider as not configured, and chat does not work.
 
@@ -84,7 +86,11 @@ Per-model schema:
 }
 ```
 
-The extension reads those keys and ignores any other key in an entry. `model_type_override` does something only when it is `vlm`, which marks the model as taking images as well as text. `reasoning_parser` selects the chat-template thinking format for `qwen`, `qwen_3_coder`, `llama`, `harmony` and `deepseek_v4`, matched case-insensitively, and any other value falls back to the plain OpenAI format. `chat_template_kwargs.enable_thinking` is read as a fallback for `enable_thinking`.
+The extension reads those keys and ignores any other key in an entry; `model_alias` is read only to find an entry on the fallback path, never to set a model's id. `model_type_override` does something only when it is `vlm`, which marks the model as taking images as well as text. `reasoning_parser` selects the chat-template thinking format for `qwen`, `qwen_3_coder`, `llama`, `harmony` and `deepseek_v4`, matched case-insensitively, and any other value falls back to the plain OpenAI format. `chat_template_kwargs.enable_thinking` is read as a fallback for `enable_thinking`.
+
+### How an entry finds its model
+
+The key in `models` is the model's folder name, not its alias. On `/models/status` the key has to equal the folder name, which is the id the server reports for that entry. When the server cannot answer `/models/status` and the extension falls back to `/models`, the key is tried first as the id `/models` reported — the alias, for an aliased model — and then as the single entry whose `model_alias` is that id. Two entries sharing an alias, or no matching key, apply no fields. A match never changes the model's id.
 
 ## Stream timeout
 

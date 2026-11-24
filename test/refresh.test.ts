@@ -450,3 +450,36 @@ test("a stored keyless login sends the placeholder while OMLX_API_KEY is set", a
 		restoreEnv();
 	}
 });
+
+// The saved default only resolves when the id pi persists is the alias, so this
+// proof runs the whole network phase and reads both the store and the list.
+test("the network phase publishes and persists an alias as the model id", async () => {
+	const harness = refreshHarness({
+		credential: {
+			type: "api_key",
+			key: "stored-key",
+			env: { OMLX_BASE_URL: BASE_URL },
+		},
+		respond: () =>
+			catalogResponse([
+				{
+					id: "Qwen3-dir",
+					model_alias: "qwen",
+					max_context_window: 65536,
+					max_tokens: 8192,
+				},
+				{ id: "plain", max_context_window: 65536, max_tokens: 8192 },
+			]),
+	});
+
+	await harness.refresh();
+
+	assert.deepEqual(
+		harness.state.persisted?.models.map((model) => model.id),
+		["qwen", "plain"],
+	);
+	assert.deepEqual(
+		harness.state.committed?.map((model) => model.id),
+		["qwen", "plain"],
+	);
+});

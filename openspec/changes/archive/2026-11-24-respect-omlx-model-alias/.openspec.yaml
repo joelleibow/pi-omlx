@@ -1,0 +1,30 @@
+schema: marbleization
+created: 2026-11-22
+x-marbleization:
+  working_dir_state: existing_project
+  runs:
+    chidi: ea175fb8-e036-43d1-94d2-19d74470a368
+    eleanor: 03a37314-9d1c-484d-842c-5014216a362d
+    michael: 5f114f30-3aa1-45e2-9e06-443f9e00b4cc
+    derek_implement: db74db1f-eb7c-4ddb-a449-124ef73ebedc
+    derek_redgreen: 2bbac1af-20cb-4aae-84f7-ad3a69346d26
+  gates:
+    design_review_stage5:
+      rounds: 7
+      cap: 5
+      cap_extended_by_owner: 2026-11-23
+      status: passed
+      note: "Rounds 1-4 ran council-readiness alone. Rounds 5, 6 and 7 ran readiness, codebase and structural and were all clean; round 7 followed the red/green patch."
+    implement: approved
+    validate: approved
+    joel_live_check: passed
+    implement_note: "Approved at 727ec65 with three minor findings; finding 1 (identity record built from the entry) is being fixed under the own-the-whole-change rule."
+  branch: respect-omlx-model-alias
+  base: e9aba43
+  planning_commit: aa604e6
+  redgreen:
+    base_tests: 108
+    green_tests: 147
+    labels: 47
+    gaps: 5
+    gaps_resolved: 5
